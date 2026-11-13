@@ -1,0 +1,48 @@
+{
+	code: "wallice",
+	class: "CylinderWorldWallIce",
+	variantgroups: [
+		// ice/snow: layout v2-v3 walls; light/dark/deep: v4+ (kept so older worlds still load)
+		{ code: "type", states: ["ice", "snow", "light", "dark", "deep"] }
+	],
+	creativeinventory: { "general": ["*"], "earthplus": ["*"] },
+	// Not "Ice": the world map treats every Ice block except vanilla's glacierice as lake ice (flat, no relief
+	// shading, dark water-edge outlines at every step). Stone gets relief shading; mapColorCode keeps it glacier white.
+	blockmaterial: "Stone",
+	// The world map only uses mapColorCode when a block has attributes; without them it shows as "land" (brown)
+	attributes: { mapColorCode: "glacier" },
+	drawtype: "cube",
+	shape: { base: "game:block/basic/cube" },
+	texturesByType: {
+		"*-ice": {
+			all: { base: "game:block/liquid/ice/packedglacier1", alternates: [ { base: "game:block/liquid/ice/packedglacier2" }, { base: "game:block/liquid/ice/packedglacier3" }, { base: "game:block/liquid/ice/packedglacier4" } ] }
+		},
+		"*-snow": {
+			all: { base: "game:block/liquid/snow/normal1", alternates: [ { base: "game:block/liquid/snow/normal2" }, { base: "game:block/liquid/snow/normal3" }, { base: "game:block/liquid/snow/normal4" } ] }
+		},
+		"*-light": {
+			all: { base: "cylinderworld:block/wallice/light1", alternates: [ { base: "cylinderworld:block/wallice/light2" }, { base: "cylinderworld:block/wallice/light3" }, { base: "cylinderworld:block/wallice/light4" } ] }
+		},
+		"*-dark": {
+			all: { base: "cylinderworld:block/wallice/dark1", alternates: [ { base: "cylinderworld:block/wallice/dark2" }, { base: "cylinderworld:block/wallice/dark3" }, { base: "cylinderworld:block/wallice/dark4" } ] }
+		},
+		"*-deep": {
+			all: { base: "cylinderworld:block/wallice/deep1", alternates: [ { base: "cylinderworld:block/wallice/deep2" }, { base: "cylinderworld:block/wallice/deep3" }, { base: "cylinderworld:block/wallice/deep4" } ] }
+		}
+	},
+	vertexFlagsByType: {
+		"*-snow": { lowContrast: true }
+	},
+	// Unbreakable: no tool reaches tier 99. Explosions are handled in BlockWallIce.
+	resistance: 999999,
+	requiredMiningTier: 99,
+	replaceable: 0,
+	fertility: 0,
+	lightAbsorption: 99,
+	materialDensity: 900,
+	drops: [],
+	soundsByType: {
+		"*-snow": { walk: "game:walk/deepsnow", place: "game:block/snow", break: "game:block/snow", hit: "game:block/snow" },
+		"*": { walk: "game:walk/ice", place: "game:block/ice", break: "game:block/ice", hit: "game:block/ice" }
+	}
+}

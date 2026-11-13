@@ -1,0 +1,110 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- VS 1.22 runs on .NET 10. Building with the .NET 8 SDK works as long as we compile
+         against the installed .NET 10 runtime assemblies instead of the .NET 8 reference pack. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>CylinderWorld</AssemblyName>
+    <RootNamespace>CylinderWorld</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\mod\</OutputPath>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(APPDATA)\Vintagestory</VintageStoryPath>
+  </PropertyGroup>
+
+  <!-- Compile against the game's own .NET runtime (10.x) so the game DLLs' references line up. -->
+  <PropertyGroup>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NetCoreRuntimeDir>$([System.IO.Directory]::GetDirectories('$(NetCoreRoot)shared\Microsoft.NETCore.App', '10.*')[0])</NetCoreRuntimeDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="$(NetCoreRuntimeDir)\System.*.dll" Exclude="$(NetCoreRuntimeDir)\System.Private.*.dll;$(NetCoreRuntimeDir)\System.IO.Compression.Native.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\System.Private.CoreLib.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\netstandard.dll" Private="false" />
+    <Reference Include="$(NetCoreRuntimeDir)\mscorlib.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI"><HintPath>$(VintageStoryPath)\VintagestoryAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VintagestoryLib"><HintPath>$(VintageStoryPath)\VintagestoryLib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VSEssentials"><HintPath>$(VintageStoryPath)\Mods\VSEssentials.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VSSurvivalMod"><HintPath>$(VintageStoryPath)\Mods\VSSurvivalMod.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(VintageStoryPath)\Lib\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="protobuf-net"><HintPath>$(VintageStoryPath)\Lib\protobuf-net.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(VintageStoryPath)\Lib\0Harmony.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
+    <Compile Remove=".local\**\*.cs" />
+    <None Include="modinfo.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="assets\**\*" Exclude="assets\**\*Name clash*;assets\**\*Edit conflict*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- The folder sync leaves "(# Name clash #)" and "(# Edit conflict ... #)" copies when two machines edit one file: in src
+       they compile as duplicate types, in assets they would load as duplicate blocks, patches or lang entries. Stop before
+       building with one of them. -->
+  <Target Name="RefuseNameClashCopies" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <NameClashCopy Include="src\**\*Name clash*;assets\**\*Name clash*;src\**\*Edit conflict*;assets\**\*Edit conflict*" />
+    </ItemGroup>
+    <Error Condition="'@(NameClashCopy)' != ''" Text="Resolve the sync's name-clash and edit-conflict copies first (keep one version of each file): @(NameClashCopy)" />
+  </Target>
+
+  <!-- The mod database's upload limit. -->
+  <UsingTask TaskName="CheckModZipSize" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <File ParameterType="System.String" Required="true" />
+      <MaxBytes ParameterType="System.Int64" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        long size = new System.IO.FileInfo(File).Length;
+        if (size > MaxBytes)
+        {
+            System.IO.File.Delete(File);
+            Log.LogError("{0} would be {1} bytes, over the mod database's limit of {2} bytes; it was not kept.", File, size, MaxBytes);
+        }
+        else Log.LogMessage(MessageImportance.High, "{0}: {1} bytes", File, size);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Release build also produces a ready-to-install zip in .\release, named with the version from modinfo.json
+       (release\cylinderworld-1.1.0.zip). Only that version's zip is replaced, and only once the new one has passed the
+       size check; zips of other versions there are never touched (CW-0007: they can be the only local copies of
+       published releases). The zip is made from a fresh folder with exactly the mod's files (assembly, symbols,
+       modinfo, worldconfig, licence, assets), so nothing left over in bin from an earlier build is shipped. -->
+  <PropertyGroup>
+    <ModVersion>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\modinfo.json')), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</ModVersion>
+  </PropertyGroup>
+  <Target Name="PackageMod" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Error Condition="'$(ModVersion)' == ''" Text="No version found in modinfo.json" />
+    <PropertyGroup>
+      <ModStage>$(MSBuildProjectDirectory)\obj\$(Configuration)\modzip\</ModStage>
+      <ModZipBuilt>$(MSBuildProjectDirectory)\obj\$(Configuration)\cylinderworld-$(ModVersion).zip</ModZipBuilt>
+      <ModZip>$(MSBuildProjectDirectory)\release\cylinderworld-$(ModVersion).zip</ModZip>
+    </PropertyGroup>
+    <ItemGroup>
+      <ModFile Include="$(OutputPath)$(AssemblyName).dll;$(OutputPath)$(AssemblyName).pdb;modinfo.json;worldconfig.json;LICENSE" />
+      <ModAsset Include="assets\**\*" Exclude="assets\**\*Name clash*;assets\**\*Edit conflict*" />
+    </ItemGroup>
+    <RemoveDir Directories="$(ModStage)" />
+    <Copy SourceFiles="@(ModFile)" DestinationFolder="$(ModStage)" />
+    <Copy SourceFiles="@(ModAsset)" DestinationFiles="@(ModAsset->'$(ModStage)assets\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <ZipDirectory SourceDirectory="$(ModStage)" DestinationFile="$(ModZipBuilt)" Overwrite="true" />
+    <CheckModZipSize File="$(ModZipBuilt)" MaxBytes="40000000" />
+    <!-- The check deletes a zip over the limit and logs the error, but the target goes on: only a zip that is still there
+         replaces the zip of this version in release\ (no other file there is deleted or changed). -->
+    <MakeDir Condition="Exists('$(ModZipBuilt)')" Directories="$(MSBuildProjectDirectory)\release" />
+    <Copy Condition="Exists('$(ModZipBuilt)')" SourceFiles="$(ModZipBuilt)" DestinationFiles="$(ModZip)" />
+    <Message Condition="Exists('$(ModZipBuilt)')" Importance="high" Text="Release zip: $(ModZip)" />
+  </Target>
+
+</Project>

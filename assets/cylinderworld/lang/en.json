@@ -1,0 +1,14 @@
+{
+	"game:tabname-earthplus": "Earth+",
+	"block-wallice-ice": "Wall ice",
+	"block-wallice-snow": "Wall snow",
+	"block-wallice-light": "Wall ice (light)",
+	"block-wallice-dark": "Wall ice (dark)",
+	"block-wallice-deep": "Wall ice (deep)",
+	"block-glacier-ice": "Glacier ice",
+	"block-glacier-light": "Glacier ice (light)",
+	"block-glacier-dark": "Glacier ice (dark)",
+	"block-glacier-floe": "Sea ice floe",
+	"block-seaice-seasonal": "Seasonal sea ice",
+	"block-seaice-permanent": "Permanent sea ice"
+}

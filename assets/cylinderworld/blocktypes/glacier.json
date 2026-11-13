@@ -1,0 +1,39 @@
+{
+	// Glacier apron in front of the polar wall. Breakable (hard), drops nothing.
+	code: "glacier",
+	// Nothing spawns on the ice sheet/shelf; only cold-specialist meat eaters (polar bears, arctic foxes) on floes
+	class: "CylinderWorldGlacierIce",
+	variantgroups: [
+		{ code: "type", states: ["ice", "light", "dark", "floe"] }
+	],
+	creativeinventory: { "general": ["*"], "earthplus": ["*"] },
+	// Not "Ice": the world map treats every Ice block except vanilla's glacierice as lake ice (flat, no relief
+	// shading, dark water-edge outlines at every step). Stone gets relief shading; mapColorCode keeps it glacier white.
+	blockmaterial: "Stone",
+	// The world map only uses mapColorCode when a block has attributes; without them it shows as "land" (brown)
+	attributes: { mapColorCode: "glacier" },
+	drawtype: "cube",
+	shape: { base: "game:block/basic/cube" },
+	texturesByType: {
+		"*-ice": {
+			all: { base: "game:block/liquid/ice/packedglacier1", alternates: [ { base: "game:block/liquid/ice/packedglacier2" }, { base: "game:block/liquid/ice/packedglacier3" }, { base: "game:block/liquid/ice/packedglacier4" } ] }
+		},
+		"*-light": {
+			all: { base: "cylinderworld:block/wallice/light1", alternates: [ { base: "cylinderworld:block/wallice/light2" }, { base: "cylinderworld:block/wallice/light3" }, { base: "cylinderworld:block/wallice/light4" } ] }
+		},
+		"*-dark": {
+			all: { base: "cylinderworld:block/wallice/dark1", alternates: [ { base: "cylinderworld:block/wallice/dark2" }, { base: "cylinderworld:block/wallice/dark3" }, { base: "cylinderworld:block/wallice/dark4" } ] }
+		},
+		"*-floe": {
+			all: { base: "cylinderworld:block/wallice/light1", alternates: [ { base: "cylinderworld:block/wallice/light2" }, { base: "cylinderworld:block/wallice/light3" }, { base: "cylinderworld:block/wallice/light4" } ] }
+		}
+	},
+	resistance: 6,
+	requiredMiningTier: 2,
+	replaceable: 0,
+	fertility: 0,
+	lightAbsorption: 99,
+	materialDensity: 900,
+	drops: [],
+	sounds: { walk: "game:walk/ice", place: "game:block/ice", break: "game:block/ice", hit: "game:block/ice" }
+}

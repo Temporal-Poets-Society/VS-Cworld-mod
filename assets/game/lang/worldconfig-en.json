@@ -1,0 +1,7 @@
+{
+  "worldconfig-category-earth": "Earth",
+  "worldattribute-cylinderSeamMist": "Seam mist",
+  "worldattribute-cylinderSeamMist-desc": "Show sea mist at Cylinder World's east-west seam and a short fog after a jump. When off, the destination is preloaded to the full view radius instead. A change applies at the next start of the world or server.",
+  "worldconfig-cylinderSeamMist-true": "On",
+  "worldconfig-cylinderSeamMist-false": "Off"
+}

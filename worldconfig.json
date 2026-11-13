@@ -1,0 +1,12 @@
+{
+  "playStyles": [],
+  "worldConfigAttributes": [
+    {
+      "category": "earth",
+      "code": "cylinderSeamMist",
+      "dataType": "bool",
+      "default": "false",
+      "onlyDuringWorldCreate": false
+    }
+  ]
+}

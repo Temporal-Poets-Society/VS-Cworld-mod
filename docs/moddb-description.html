@@ -1,0 +1,48 @@
+<p><strong>Cylinder World turns your map into a planet.</strong> Travel east or west through a misty ocean and emerge on the other side. Explore from the equator to frozen poles, with latitude-based climates, seasons and day length.</p>
+
+<p>I made this mod because I wanted to travel around the world in Vintage Story. It is currently tailored mainly for use with <a href="https://mods.vintagestory.at/earth"><strong>Earth Map</strong></a>.</p>
+
+<p><strong>Current release: 1.0.2.</strong> feedback and bug reports are welcome. Development is focused on testing, improvements and broader mod compatibility, including terrain generators such as Terra Pretty.</p>
+
+<h2>Features</h2>
+<ul>
+<li><strong>East-west wrapping:</strong> players, mounts, boats and other entities cross between matching ocean edges. The destination is loaded ahead of your arrival.</li>
+<li><strong>Planetary climate:</strong> one equator and two poles replace repeating climate bands. High latitudes have long summer days, short winter days and polar day/night; seasons reverse in the southern hemisphere.</li>
+<li><strong>Frozen poles:</strong> tundra gives way to ice sheets, floes and impassable ice walls. Extreme winter cold makes polar exploration dangerous.</li>
+<li><strong>Climate-based spawn:</strong> your starting climate determines your spawn latitude, and vanilla story locations move with it.</li>
+</ul>
+
+<h2>Getting started</h2>
+<ol>
+<li>Requires <strong>Vintage Story 1.22.0 or newer</strong>. Install on the server and every client.</li>
+<li>Create a <strong>new world</strong> with world type <strong>standard</strong>.</li>
+<li><strong>Recommended world size: 256k or 512k.</strong> Smaller worlds can be used for testing.</li>
+</ol>
+<p>Existing worlds are not recommended: previously generated terrain keeps its old edges. Removing the mod from a save is unsupported.</p>
+
+<h2>Compatibility and settings</h2>
+<p>Works with vanilla terrain and <a href="https://mods.vintagestory.at/earth"><strong>Earth Map</strong></a>. In a new Earth world it automatically keeps Antarctica's terrain and adds seasonal polar sea ice; other worlds get its own ice plateaus (<code>"PolarIceMode"</code> in <code>VintagestoryData/ModConfig/cylinderworld.json</code>: <code>default</code>, <code>earth</code> or <code>plateaus</code>).</p>
+<p><strong>Terra Pretty and other terrain or climate overhauls are not yet verified.</strong> Compatibility testing and improvements are planned as development continues.</p>
+<p>The config also controls the seam, mist, polar walls and climate. Most world-layout settings are saved when the world is created and only affect new worlds.</p>
+
+<h2>Commands</h2>
+<ul>
+<li><code>/cyl info</code> shows coordinates, climate and polar cold exposure.</li>
+<li><code>/cyl map</code> saves a world preview to <code>VintagestoryData/CylinderWorld/</code>.</li>
+</ul>
+
+<h2>Known issues</h2>
+<ul>
+<li>Crossings can cause a short hitch, especially on boats or in multiplayer.</li>
+<li>Other players disappear across the jump line until you cross too.</li>
+<li>The vanilla map does not wrap, and the HUD shows raw X coordinates.</li>
+</ul>
+<p>When reporting crossing problems, include the <code>Seam jump</code> lines from your client and server logs.</p>
+
+<h2>Contact and development</h2>
+<p><strong>You can contact me on Discord: ifeelveryunlucky.</strong></p>
+<p><strong>Anyone who would like to join forces on development is welcome.</strong> If you're interested in contributing, get in touch!</p>
+
+<p><strong>AI disclaimer:</strong> All code in this mod was created using AI tools. The ideas and design are mine, and I have put extensive work into testing, refining and improving the mod.</p>
+
+<p>Licensed under GPL-3.0.</p>

@@ -1,0 +1,29 @@
+{
+  code: "seaice",
+  class: "CylinderWorldSeaIce",
+  variantgroups: [{ code: "type", states: ["seasonal", "permanent"] }],
+  creativeinventory: { "general": ["*"], "earthplus": ["*"], "terrain": ["*"] },
+  shape: { base: "game:block/basic/cube" },
+  drawtype: "cube",
+  blockmaterial: "Ice",
+  faceCullMode: "Callback",
+  renderpassByType: { "*-seasonal": "transparent", "*": "opaque" },
+  texturesByType: {
+    "*-seasonal": { all: { base: "game:block/liquid/ice/lake*" } },
+    "*-permanent": { all: { base: "cylinderworld:block/wallice/light1", alternates: [
+      { base: "cylinderworld:block/wallice/light2" }, { base: "cylinderworld:block/wallice/light3" },
+      { base: "cylinderworld:block/wallice/light4" } ] } }
+  },
+  attributes: { mapColorCode: "glacier" },
+  sideopaque: { all: false },
+  lightAbsorption: 0,
+  vertexFlags: { zOffset: 1 },
+  emitSideAo: { all: true },
+  replaceable: 950,
+  resistance: 0.5,
+  materialDensity: 900,
+  dragMultiplier: 0.02,
+  snowCoverage: false,
+  sounds: { walk: "game:walk/ice", break: "game:block/ice", hit: "game:block/ice" },
+  drops: []
+}
