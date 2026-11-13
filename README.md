@@ -1,55 +1,51 @@
 # Cylinder World — Vintage Story 1.22
 
-**13 November - 1.1.0-rc.4:** a per-world switch for the seam mist (CW-D48); rivulet sources already saved in old
-worlds' polar walls are taken out once per column on load (CW-D49); in plain Cylinder World worlds `polarEquatorDistance`
-follows the planet (CW-D50); a Release build keeps other versions' zips.
-
-**9 November - 1.1.0-rc.3 (the author's choices on two proposals):** in Earth worlds, hot springs are left to Earth,
-which places them only at real geothermal sites (Deception Island, Mount Erebus); Cylinder World keeps them out of the
-lifeless kilometre at the Walls only. `ExtendTemperatureRange` is now saved with each new world (it also changes world
-generation's climate readings), and it is off in Earth worlds, where Earth's own setting extends the real climate.
-Worlds made before keep their behaviour.
-
-**9 November second review - 1.1.0-rc.2:** the merged rc.1 was reviewed again (four audits, Codex correctness and design
-reviews) with Earth 2.0.0-rc.2, and fixed. Generated terrain is the same as rc.1 except one Earth-world fix (the mantle
-curtain under the jump line is laid again where Earth's rock floor reaches it). The seam journal now catches every
-change before a column unloads or the world saves, never drops a hopper's items twice, keeps a container's late slot
-changes, and costs a broken block entity only its own cell; a crossing into an unloaded destination waits instead of
-landing unchecked; a world whose block ids can't be set up, or a band-lakes world with an Earth that lacks their water
-level, is refused instead of generated wrongly; the rain fold steps aside only when the other mod's rain patch is really
-on; failing weather pairs back off; an `earth-creating` key left in a played world no longer makes it new; a game
-update that adds an overload or breaks a transpiler later switches off only that feature. Details: CW-D36 to CW-D45 and
-the rc.2 record in [decisions](docs/DECISIONS.md).
-
-**8 November review - 1.1.0-rc.1 (release candidate, companion of Earth 2.0.0):** the whole mod was reviewed (six area
-audits, Codex correctness and design reviews) and fixed; generated terrain stays the same as 1.0.4 except the bug fixes
-listed here. Details and reasons: [decisions](docs/DECISIONS.md) CW-D38 to CW-D45.
+**13 November - 1.1.0-rc.4 (release candidate, companion of Earth 2.0.0):** the whole mod was reviewed (area audits,
+Codex correctness and design reviews) and fixed, and gains a per-world seam mist switch. Generated terrain stays the same
+as 1.0.4 except the fixes listed here and, in new plain Cylinder World worlds, the landform layout (CW-D50). Worlds made
+before keep their saved behaviour. Requires Vintage Story 1.22.0 or later; Earth is optional. Details and reasons:
+[decisions](docs/DECISIONS.md) CW-D38 to CW-D50.
 - **Game updates:** every Harmony patch and every reflected game member goes through one place (CW-D39). If a game update
-  renames one, only that feature switches off, with one log line naming what is missing (`Cylinder World: … is off: …`).
+  renames one, adds an overload or breaks a transpiler, only that feature switches off, with one log line naming what
+  is missing (`Cylinder World: … is off: …`).
+- **Seam mist per world** (CW-D48): the world option **Seam mist** (`cylinderSeamMist`, Earth tab, unticked by default,
+  changeable later) switches the seam mist and jump fog; worlds without it follow the config's `SeamMist`.
 - **Rain with Earth's weather** (CW-D38): the seam's rain fold steps aside while another mod drives vanilla's weather
-  (Earth's `seacontracts:weather` role) and no longer blocks other mods' rain patches.
+  (Earth's `seacontracts:weather` role), and only when that mod's rain patch is really on. It no longer blocks other
+  mods' rain patches, and failing weather pairs back off.
 - **Block edits across the seam** (CW-D40): chests and other containers changed through their inventory now reach the
   other copy and the saved journal (before, the other copy kept the old items and a reload restored them); seasonal sea
   ice is no longer journaled (it grew without bound near the seam in Earth worlds); edits from other threads are applied
   on the main thread; a journaled block from a removed mod is skipped instead of crashing the server; the journal keeps
-  only what an unloaded copy still lacks.
+  only what an unloaded copy still lacks. It catches every change before a column unloads or the world saves, never
+  drops a hopper's items twice, keeps a container's late slot changes, and a broken block entity costs only its own cell.
 - **Crossing:** a blocked crossing no longer resets the prepared other side; players (and what they ride) past the line
   wait until the destination is loaded and only then cross, with the usual landing check; other players and shared boats
   stay smooth through a jump; cube blocks (the ice walls, sea ice, gravel) keep their texture variant at the jump; a
   teleport the server announces as a wrap is a seam jump on the client (a `/tp` of about one ring lands where the server
   says), and any other one-ring teleport still gets the client's jump handling.
 - **New worlds:** a world whose first start stopped before generating anything (Earth's data download failing) is set
-  up as new on the retry (CW-D41); Earth's lakes, salt lakes and rivers in the band keep their water (CW-D42); Earth worlds
-  fit the story chain to Earth's real polar limit; small worlds keep an identical band part before the jump line.
+  up as new on the retry (CW-D41), and an `earth-creating` key left in a played world doesn't make it new; Earth's lakes,
+  salt lakes and rivers in the band keep their water (CW-D42); Earth worlds fit the story chain to Earth's real polar
+  limit; small worlds keep an identical band part before the jump line. A world whose block ids can't be set up, or a
+  band-lakes world with an Earth that lacks their water level, is refused instead of generated wrongly. A new world
+  with this mod's latitude gets the planet's pole distance as `polarEquatorDistance` (CW-D50), so other mods that read
+  it agree with the latitude; in plain worlds this also moves vanilla's landforms.
 - **Worldgen fixes (new chunks):** no lava or water sources in the mod's ice anywhere in the polar zone (CW-D43); the band
-  is identical below its floor where a lower neighbour shows it; the mantle curtain also runs under the polar band.
+  is identical below its floor where a lower neighbour shows it; the mantle curtain also runs under the polar band, and
+  in Earth worlds under the jump line where Earth's rock floor reaches it. Rivulet sources already saved in older worlds'
+  polar walls are taken out once per column on load (CW-D49).
+- **Earth worlds:** hot springs are left to Earth, which places them only at real geothermal sites (Deception Island,
+  Mount Erebus); Cylinder World keeps them out of the lifeless kilometre at the Walls only (CW-D46).
 - **Climate:** the live temperature correction is applied once per reading (vanilla's catch-up loops reused one reading
   and drifted it by tens of degrees); the weather sync is cheaper and takes vanilla's lock; in Earth worlds the cold
-  exposure counts the polar sea only where it is frozen under the player.
+  exposure counts the polar sea only where it is frozen under the player. `ExtendTemperatureRange` is saved with each
+  new world (it also changes world generation's climate readings) and is off in Earth worlds, where Earth's own setting
+  extends the real climate (CW-D47).
 - **Config and commands:** a config file that fails to load is left as it is (it used to be overwritten with defaults);
   `PolarIceMode` values are `default` (automatic), `earth`, `plateaus`, anything else warns and means `default`; the dead
   `BarrenDepth` key is gone; `/cyl map` works from the server console; `/cyl goseam` lands on the surface. A save made by a
-  newer layout is refused instead of generated with this one.
+  newer layout is refused instead of generated with this one. A Release build keeps other versions' zips.
 - Also carries the earlier four-round review's fixes, which the 1.0.x line didn't have (they were play-tested in
   0.11.15-playtest.1 to .9): exposure kept over relogs, per-side temperature clamps, sea ice near players first, overworld
   only, guarded Earth patches and more ([review follow-ups](docs/review-followups.md)).
@@ -193,7 +189,7 @@ claims but whose terrain model can't be read is refused with a message instead o
   This does not delete creatures or prevent animals from walking in from elsewhere.
 - **Hot springs and traders:** trader camps are blocked across Antarctica and inside the final kilometre at either Wall;
   hot springs only inside that kilometre, since Earth places them only at real geothermal sites (Deception Island,
-  Mount Erebus) and decides that itself (1.1.0-rc.3, CW-D46). Footprints that would overlap those areas count. Other
+  Mount Erebus) and decides that itself (CW-D46). Footprints that would overlap those areas count. Other
   regions and unrelated ruins retain their normal generation rules. Existing trader camps, entities and springs are not
   removed.
 - **The Wall** stays on the same straight north/south world edges, with the same rough face, protection and blocks.
@@ -470,7 +466,7 @@ What to watch while testing:
 | `TundraLatitude` | 76 | trees fade out from here to the ice sheet |
 | `PackIceDepth` | 256 | ice floes beyond the sheet's edge |
 | `ShelfExtra` | 320 | the raised seabed continues this far beyond the ice edge, fading into the natural seabed |
-| `ExtendTemperatureRange` | true | let temperatures go below vanilla's −20 °C map floor. New worlds only since 1.1.0-rc.3 (saved with the world, as it also changes world generation's climate readings); worlds from earlier versions keep reading it at every start. Off in Earth worlds, where Earth's own setting extends the real climate |
+| `ExtendTemperatureRange` | true | let temperatures go below vanilla's −20 °C map floor. Saved with each new world, as it also changes world generation's climate readings; worlds made with 1.0.x keep reading it at every start. Off in Earth worlds, where Earth's own setting extends the real climate |
 | `WallMeanTemperature` | −40 | yearly average on the plateau at the Wall |
 | `IceSheetWinterRule` | true | the cold exposure meter on the ice sheet |
 | `ColdStart` / `ColdFull` | −40 / −65 | exposure starts below this live temperature / full rate at or below this |
@@ -489,7 +485,7 @@ them later only affects new worlds. A new world also gets the planet's equator-t
 rivulets left in the polar ice of a world made before 1.0.2 is taken out the first time each column loads (CW-D49). Read live on every start: the mist and jump-fog settings, `WallBuildMargin`,
 `ProtectSeamBand`, `WrapOtherEntities`, `WallGuard`, `JumpCooldown`, `SyncWeatherAcrossSeam`, the Prepare/PreSend/Unload
 keys, `SeasonalSeaIce`, the winter-rule keys and `FlattenSeabed` (see its row), and `ExtendTemperatureRange` in worlds
-from before 1.1.0-rc.3. A config file
+made with 1.0.x. A config file
 that fails to load (a typo, a wrong type) is left as it is and the session runs on the defaults, with an error in the
 server log; fix the file and restart.
 Worlds created with mod 0.1.x keep no walls and vanilla climate; 0.2.x worlds keep their center-warmest layout;
@@ -514,7 +510,7 @@ zones, you cross about 3 km of sea at the seam. How the band, blend and coast fi
 | `src/SeamWeatherSync.cs` | both | server: keeps the weather of mirrored seam regions identical, sending only when they differ; both (`SeamRainPatch`): rain noise made continuous around the ring, stepping aside while another mod drives vanilla's weather (CW-D38) |
 | `src/SeamJumpClient.cs` | client | at a jump: water reference points and camera shifted, the client's weather copied to the arrival side, clouds kept in place, weather transitions not restarted |
 | `src/SeamMistSystem.cs` | client | fog that depends only on distance to the jump line, so it looks the same on both sides, plus a short pulse after a jump if the arrival area isn't loaded yet |
-| `src/ClientMapRaceFix.cs` | client | Harmony fix for a game race (0.9.2): the client's network thread added map chunks while the main thread removed them, and after a few jumps the client crashed with "Index was outside the bounds of the array" in `networkproc`. Both sides now take one lock, for the map chunks; map regions only where they aren't a concurrent dictionary (in 1.22.7 they are, so they aren't locked). Earth up to 2.0.0-rc.2 carried its own copy (the two work together); from 2.0.0-rc.3 Earth relies on this one |
+| `src/ClientMapRaceFix.cs` | client | Harmony fix for a game race (0.9.2): the client's network thread added map chunks while the main thread removed them, and after a few jumps the client crashed with "Index was outside the bounds of the array" in `networkproc`. Both sides now take one lock, for the map chunks; map regions only where they aren't a concurrent dictionary (in 1.22.7 they are, so they aren't locked). Earth 2.0 relies on this one; older Earth versions carry their own copy (the two work together) |
 | `src/EarthPolarModel.cs`, `src/EarthPolarSystem.cs` | server | optional Earth model adapter, wildlife/feature guards and automatic wall height |
 | `src/EarthPolarWorldGen.cs`, `src/EarthPolarTerrain.cs` | server | Earth-only polar surfaces: opaque Antarctic glaciers, Arctic pressure ice and snowdrifts; preserves Earth's land elevations |
 | `src/SeaIcePolicy.cs`, `src/SeaIceSystem.cs`, `src/BlockSeaIce.cs` | server / both for blocks | shared seasonal coverage policy, bounded loaded-chunk updates (each loaded copy of a seam column updated on its own, not through the seam journal), and saltwater ice blocks |
