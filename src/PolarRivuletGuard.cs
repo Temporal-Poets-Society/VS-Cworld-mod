@@ -26,6 +26,10 @@ namespace CylinderWorld
         {
             var worldGen = api.ModLoader.GetModSystem<SeamWorldGen>();
             if (worldGen != null) api.Event.ChunkColumnGeneration(worldGen.ClearRivuletsInIce, EnumWorldGenPass.Vegetation, "standard");
+            // CW-0014: no patch on a server that has the mod switched off, and off again in a world that gets no seam (no
+            // walls to guard; GuardOn is false then, so the cleanup looks everywhere, as it does without the guard)
+            if (CylinderWorldCore.DisabledOn(api)) return;
+            CylinderWorldCore.WhenWorldHasNoSeam(api, () => feature?.Unpatch());
             harmony = new Harmony("cylinderworld.polarrivulets");
             var f = new GameFeature("the guard that keeps vanilla's rivulets out of the polar wall", harmony, Mod.Logger);
             f.Patch(f.Method(f.Type("Vintagestory.ServerMods.GenRivulets"), "OnChunkColumnGen", new[] { typeof(IChunkColumnGenerateRequest) }),

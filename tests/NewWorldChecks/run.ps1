@@ -1,6 +1,7 @@
 param(
-    [string]$GamePath = "$env:APPDATA\Vintagestory",
-    [string]$TemplateConfig = 'C:\VS mods\Earth\testserver\serverconfig.json',
+    [string]$GamePath = '',
+    # A serverconfig.json to start from. Default: the game's own defaults with the checks' world (tests\common.ps1, CW-0013)
+    [string]$TemplateConfig = '',
     [string]$DataPath = (Join-Path $env:TEMP ('cylinder-newworld-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))),
     # another build to test (e.g. the baseline, which shows the bug): its release zip and the CylinderWorld.dll inside it
     [string]$ModZip = '',
@@ -17,44 +18,23 @@ param(
 # "Enabled": false (Cylinder World must stay off and the file must stay as it is).
 # Temporary local-only server; never touches the normal game data.
 $ErrorActionPreference = 'Stop'
-$root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+. (Join-Path $PSScriptRoot '..\common.ps1')
+if (!$GamePath) { $GamePath = Get-TestGamePath }
 if (Test-Path -LiteralPath $DataPath) { throw "Use a fresh test data directory: $DataPath" }
 New-Item -ItemType Directory -Path "$DataPath\Mods\newworldprobe", "$DataPath\ModConfig" -Force | Out-Null
 $DataPath = [IO.Path]::GetFullPath($DataPath)
-$version = (Get-Content -LiteralPath "$root\modinfo.json" -Raw | ConvertFrom-Json).version
-if (!$ModZip) { $ModZip = Join-Path $root "release\cylinderworld-$version.zip" }
-if (!$ModDll) { $ModDll = "$root\bin\Release\mod\CylinderWorld.dll" }
+if (!$ModZip) { $ModZip = Join-Path $TestRoot "release\cylinderworld-$(Get-ModVersion).zip" }
+if (!$ModDll) { $ModDll = "$TestRoot\bin\Release\mod\CylinderWorld.dll" }
+Assert-ZipHoldsDll $ModZip $ModDll
 Copy-Item -LiteralPath $ModZip -Destination "$DataPath\Mods\cylinderworld.zip"
 Set-Content -LiteralPath "$DataPath\Mods\newworldprobe\modinfo.json" -Value '{"type":"code","modid":"newworldprobe","name":"New World Probe","version":"1.0.0","side":"Server","dependencies":{"game":"1.22.0","cylinderworld":"1.0.0"}}'
-$config = Get-Content -LiteralPath $TemplateConfig -Raw | ConvertFrom-Json
-# A port free for TCP and UDP both (the server binds both on 127.0.0.1): Windows reserves some ranges for one protocol
-# only, and the other then fails with SocketException 10013
-$port = 0
-for ($i = 0; $i -lt 100 -and !$port; $i++) {
-    # random candidates below the dynamic range: the OS's own picks come in sequence and can all sit in one excluded range
-    $candidate = Get-Random -Minimum 42000 -Maximum 48999
-    $tcp = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $candidate)
-    try { $tcp.Start(); [Net.Sockets.UdpClient]::new([Net.IPEndPoint]::new([Net.IPAddress]::Loopback, $candidate)).Dispose(); $port = $candidate } catch { } finally { $tcp.Stop() }
-}
-if (!$port) { throw 'No port is free for both TCP and UDP.' }
-$config.Port = $port
-$config.Ip = '127.0.0.1'; $config.Upnp = $false; $config.AdvertiseServer = $false
-$config.ModPaths = @('Mods', "$DataPath\Mods")
+$config = New-TestServerConfig -GamePath $GamePath -DataPath $DataPath -Template $TemplateConfig
 $config.MapSizeX = 16384; $config.MapSizeY = 256; $config.MapSizeZ = 8192
 $config.WorldConfig.MapSizeY = 256
 $config.WorldConfig.WorldConfiguration.worldWidth = '16384'; $config.WorldConfig.WorldConfiguration.worldLength = '8192'
 $config.WorldConfig.WorldName = 'Cylinder new world retry'
 $config.WorldConfig.Seed = '4245'
-$runtime = (Get-ChildItem 'C:\Program Files\dotnet\shared\Microsoft.NETCore.App' -Directory -Filter '10.*' | Sort-Object Name -Descending | Select-Object -First 1).FullName
-$compiler = (Get-ChildItem 'C:\Program Files\dotnet\sdk' -Directory -Filter '8.*' | Sort-Object Name -Descending | Select-Object -First 1).FullName
-$refs = @(Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Where-Object { $_.Name -like 'System.*' -and $_.Name -notlike '*.Native.dll' -or $_.Name -in @('mscorlib.dll', 'netstandard.dll') } | ForEach-Object FullName)
-$refs += @("$GamePath\VintagestoryAPI.dll", "$GamePath\Lib\protobuf-net.dll", $ModDll)
-$argsFile = @('/nologo', '/target:library', '/langversion:12', '/nostdlib+', ('/out:"' + $DataPath + '\Mods\newworldprobe\NewWorldProbe.dll"'))
-$argsFile += $refs | ForEach-Object { '/reference:"' + $_ + '"' }
-$argsFile += '"' + $PSScriptRoot + '\ProbeMod.cs"'
-Set-Content -LiteralPath "$DataPath\probe.rsp" -Value $argsFile
-& dotnet "$compiler\Roslyn\bincore\csc.dll" "@$DataPath\probe.rsp"
-if ($LASTEXITCODE -ne 0) { throw 'New world probe compilation failed.' }
+Invoke-GameCompile -GamePath $GamePath -Out "$DataPath\Mods\newworldprobe\NewWorldProbe.dll" -Sources @("$PSScriptRoot\ProbeMod.cs") -References @($ModDll)
 Write-Output "New world test data: $DataPath"
 $cfgPath = "$DataPath\ModConfig\cylinderworld.json"
 $maps = @{}
@@ -64,7 +44,7 @@ $worlds = @(
 foreach ($world in $worlds) {
     if ($Baseline -and $world.Save -ne 'newworld.vcdbs') { break }
     $config.WorldConfig.SaveFileLocation = "$DataPath\Saves\$($world.Save)"
-    $config | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath "$DataPath\serverconfig.json"
+    Save-TestServerConfig $config $DataPath
     foreach ($pass in $world.Passes) {
         Set-Content -LiteralPath "$DataPath\ModConfig\newworld-pass.txt" -Value $pass
         if ($pass -eq 'badconfig') {
@@ -75,8 +55,7 @@ foreach ($world in $worlds) {
             Set-Content -LiteralPath $cfgPath -Value $badConfig
         }
         if (Test-Path -LiteralPath "$DataPath\Logs\server-main.log") { Remove-Item -LiteralPath "$DataPath\Logs\server-main.log" }
-        $proc = Start-Process -FilePath "$GamePath\VintagestoryServer.exe" -ArgumentList @('--dataPath', ('"' + $DataPath + '"')) -WorkingDirectory $GamePath -WindowStyle Hidden -RedirectStandardOutput "$DataPath\console-$pass.log" -RedirectStandardError "$DataPath\error-$pass.log" -PassThru
-        if (!$proc.WaitForExit(240000)) { Stop-Process -Id $proc.Id; throw "$pass start timed out; data at $DataPath" }
+        Invoke-TestServer -GamePath $GamePath -DataPath $DataPath -Name $pass -TimeoutSeconds 240 | Out-Null
         Copy-Item -LiteralPath "$DataPath\Logs\server-main.log" -Destination "$DataPath\result-$pass.log"
         $log = Get-Content -LiteralPath "$DataPath\result-$pass.log" -Raw
         $lines = $log -split '\r?\n'

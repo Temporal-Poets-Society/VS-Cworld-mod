@@ -136,7 +136,9 @@ namespace CylinderWorld
                 if (ep == null || !ep.Alive || plr.ConnectionState != EnumClientState.Playing) continue;
 
                 var mode = plr.WorldData.CurrentGameMode;
-                bool exempt = mode == EnumGameMode.Creative || mode == EnumGameMode.Spectator;
+                // Another dimension (a mini dimension, a schematic preview) has its own coordinates: not on the ice sheet
+                // there (CW-0015), as the wrap, the preloader and the sea ice also skip it; the meter recovers
+                bool exempt = mode == EnumGameMode.Creative || mode == EnumGameMode.Spectator || ep.Pos.Dimension != 0;
                 double harsh = exempt ? 0 : p.SheetHarshness(ep.Pos.X, ep.Pos.Z);
                 // Earth mode: the sea part of the sheet follows the season's ice target, which the live ice catches up with
                 // over minutes (SeaIceSystem); a boat or swimmer on water that hasn't frozen yet isn't on the ice

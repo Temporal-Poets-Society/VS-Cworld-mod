@@ -1,9 +1,10 @@
 namespace CylinderWorld
 {
     /// <summary>
-    /// Server config, stored as ModConfig/cylinderworld.json. Geometry values (JumpInset, SeamHalfWidth,
-    /// CoastFalloff, SeabedDepth) are frozen into the savegame the first time a world loads with the mod,
-    /// so editing them later only affects new worlds.
+    /// Server config, stored as ModConfig/cylinderworld.json. The values that shape terrain (the geometry: JumpInset,
+    /// SeamHalfWidth, CoastFalloff, SeabedDepth, the walls and the climate; and FlattenSeabed and ExtendTemperatureRange
+    /// since 1.1) are frozen into the savegame the first time a world loads with the mod, so editing them later only
+    /// affects new worlds. Worlds saved before 1.1 keep reading FlattenSeabed and ExtendTemperatureRange from here.
     /// </summary>
     public class CylinderWorldConfig
     {
@@ -17,10 +18,13 @@ namespace CylinderWorld
         /// jump lines are seam ocean that is never visited, so they're never generated.
         /// </summary>
         public bool EarthProportions = true;
-        /// <summary>Half-width of the ocean band at each edge, including its 160-block blend. 0 = auto (JumpInset + view radius + 64 + 160).</summary>
+        /// <summary>Half-width of the ocean band at each edge, including its 160-block blend. 0 = auto (JumpInset + view radius + 64,
+        /// then the wavy edge's 64 and the 160-block blend).</summary>
         public int SeamHalfWidth = 0;
         public int CoastFalloff = 1024;
         public int SeabedDepth = 40;
+        /// <summary>Build the band's identical seabed and the jump curtain. New worlds only, saved with the world: off, both
+        /// sides of the jump keep their natural terrain and block edits there are not mirrored.</summary>
         public bool FlattenSeabed = true;
 
         /// <summary>No placing/breaking blocks inside the band (creative mode exempt).</summary>
@@ -90,7 +94,9 @@ namespace CylinderWorld
         /// (Earth's Antarctica, low Arctic sea ice, Earth's land across the seam), any other world our two ice plateaus.
         /// "earth" is the same, but warns when the new world isn't an Earth world. "plateaus" always uses our plateaus.</summary>
         public string PolarIceMode = "default";
-        /// <summary>Seasonal polar ocean ice in Earth-mode worlds; the Wall approach remains permanent.</summary>
+        /// <summary>Seasonal polar ocean ice in Earth-mode worlds; the Wall approach remains permanent. Read at every start.
+        /// Switched off in a world that had it, the ice stays where the last season left it (nothing thaws it) and new
+        /// chunks get solid floes.</summary>
         public bool SeasonalSeaIce = true;
         /// <summary>Height of the ice plateau above sea level near the wall (it drops steeply only near its edge).</summary>
         public int PlateauHeight = 70;

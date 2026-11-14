@@ -90,6 +90,35 @@ class Program
         string csproj = File.ReadAllText(Path.Combine(root, "CylinderWorld.csproj"));
         Check(csproj.Contains("worldconfig.json") && !csproj.Contains("OldModZips"), "the zip carries worldconfig.json; the build deletes no other release zip (CW-0007)");
 
+        // CW-0011 (with CW-D47): FlattenSeabed and ExtendTemperatureRange are saved with a new record; an older record
+        // without the marker keeps reading the config at every start; the packet carries them to clients
+        var freeze = typeof(CylinderWorldCore).GetMethod("FreezeWorldSettings", flags);
+        var start = typeof(CylinderWorldCore).GetMethod("ApplyStartSettings", flags);
+        foreach (bool made in new[] { false, true })
+        {
+            var fresh = new SeamParams { Version = 10, WorldWidth = 256000 };
+            freeze.Invoke(null, new object[] { fresh, new CylinderWorldConfig { FlattenSeabed = made, ExtendTemperatureRange = made } });
+            var saved = SerializerUtil.Deserialize<SeamParams>(SerializerUtil.Serialize(fresh));
+            Check(saved.FlattenSeabedFrozen && saved.FlattenSeabed == made && saved.ExtendTemperatureFrozen && saved.ExtendTemperature == made,
+                "a new record keeps the config's FlattenSeabed and ExtendTemperatureRange, marked frozen");
+            start.Invoke(null, new object[] { saved, new CylinderWorldConfig { FlattenSeabed = !made, ExtendTemperatureRange = !made } });
+            Check(saved.FlattenSeabed == made && saved.ExtendTemperature == made, "a frozen world ignores a changed config");
+            var old = SerializerUtil.Deserialize<SeamParams>(SerializerUtil.Serialize(new SeamParams { Version = 10, WorldWidth = 256000 }));
+            Check(!old.FlattenSeabedFrozen && !old.ExtendTemperatureFrozen, "a record saved before 1.1 has no marker");
+            start.Invoke(null, new object[] { old, new CylinderWorldConfig { FlattenSeabed = made, ExtendTemperatureRange = made, WallBuildMargin = -5 } });
+            Check(old.FlattenSeabed == made && old.ExtendTemperature == made && old.WallBuildMargin == 0, "an older record reads the config at every start");
+            var client = SerializerUtil.Deserialize<SeamParams>(SerializerUtil.Serialize(saved));
+            Check(client.FlattenSeabed == made, "the packet carries the world's FlattenSeabed");
+        }
+        // A world made without the flatten has no identical part to pair
+        var twin = typeof(SeamBlocks).GetMethod("Twin", flags);
+        var band = new SeamParams { Version = 10, WorldWidth = 256000, WorldLength = 102400, JumpInset = 25600, SeamHalfWidth = 26272, CoastFalloff = 1024 };
+        bool Paired(SeamParams sp) => (bool)twin.Invoke(null, new object[] { sp, new Vintagestory.API.MathTools.BlockPos(25602, 120, 51211), null });
+        band.FlattenSeabed = true;
+        bool withFlatten = Paired(band);
+        band.FlattenSeabed = false;
+        Check(withFlatten && !Paired(band), "mirroring pairs the band's identical part only where the band was flattened");
+
         // CW-D50: polarEquatorDistance is the planet's pole distance in new worlds with this mod's latitude
         var ped = typeof(CylinderWorldCore).GetMethod("ApplyPolarEquatorDistance", flags);
         string Ped(SeamParams sp, string before, out string line)

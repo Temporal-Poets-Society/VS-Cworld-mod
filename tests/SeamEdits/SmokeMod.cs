@@ -92,6 +92,7 @@ public class SeamEditSmoke : ModSystem
         if (reload)
         {
             Equal("solid/fluid edits survive shutdown and reload");
+            Check(!journal.Contains(a.AddCopy(0, 0, 7)) && !journal.Contains(a.AddCopy(0, 0, 8)), "journal cells holding only snow cover (older builds' snow: a layer, tall grass under snow) are dropped at load");
             Check(At(a).Id == Block("planks-birch-ud").Id, "latest opposite-side edit persisted (actual=" + At(a).Code + ")");
             var chest = a.AddCopy(0, 1, 0); var chestTwin = b.AddCopy(0, 1, 0);
             Equal("container block persists", chest);
@@ -111,7 +112,7 @@ public class SeamEditSmoke : ModSystem
             Load(farTarget, () =>
             {
                 Check(At(farTarget).Id == Block("planks-oak-ud").Id, "unloaded-counterpart journal survives shutdown before target generation");
-                CheckHopperReplay(() => End(null));
+                CheckHopperReplay(() => CheckShutdownDrain(() => End(null)));
             });
             return;
         }
@@ -176,6 +177,9 @@ public class SeamEditSmoke : ModSystem
             Check(Inventory(chestPos)[2].StackSize == 3, "slot transfer without MarkDirty through replica updates authority");
         }
         CheckSuppress();
+        CheckSnowScope();
+        CheckSnowLanding();
+        JournalOldSnow();
         CheckUnregistered();
         CheckPackets();
         api.WorldManager.SaveGame.StoreData("seamedit-test-phase", new byte[] { 1 });
@@ -199,6 +203,75 @@ public class SeamEditSmoke : ModSystem
             "a write inside Suppress is not copied and drops the older journal cell");
         ba.SetBlock(0, twin);
         Equal("an ordinary edit after it reaches both copies again", pos);
+    }
+
+    /// <summary>CW-0010 (CW-D51): vanilla's snow accumulation commit is patched, and a write inside it is left to each copy
+    /// (not copied, not journaled) while an older journal cell for its position (a player's block) stays.</summary>
+    void CheckSnowScope()
+    {
+        var target = AccessTools.Method(typeof(WeatherSimulationSnowAccum), "OnServerTick100ms", new[] { typeof(float) });
+        var info = target == null ? null : Harmony.GetPatchInfo(target);
+        Check(info != null && info.Prefixes.Any(x => x.owner == "cylinderworld.seamblocks.snow") && info.Finalizers.Any(x => x.owner == "cylinderworld.seamblocks.snow"),
+            "vanilla's snow accumulation commit is patched");
+        var ba = api.World.BlockAccessor;
+        var pos = a.AddCopy(0, 0, 5); var twin = b.AddCopy(0, 0, 5);
+        int birch = Block("planks-birch-ud").Id, snow = Block("snowlayer-1").Id;
+        ba.SetBlock(birch, pos);
+        bool journaled = journal.Contains(pos) && At(twin).Id == birch;
+        var blocks = api.ModLoader.GetModSystem<SeamBlocks>();
+        var snowing = AccessTools.Field(typeof(SeamBlocks), "snowing");
+        snowing.SetValue(blocks, 1);
+        try { ba.SetBlock(snow, pos); ba.SetBlock(snow, pos.UpCopy()); }
+        finally { snowing.SetValue(blocks, 0); }
+        Check(journaled && At(pos).Id == snow && At(twin).Id == birch && At(twin.UpCopy()).Id == 0 && journal.Contains(pos) && !journal.Contains(pos.UpCopy()),
+            "a snow accumulation write is left to each copy, and the older journal cell stays");
+        ba.SetBlock(0, pos.UpCopy()); ba.SetBlock(0, twin.UpCopy());
+        ba.SetBlock(0, pos);
+        Equal("an ordinary edit after it reaches both copies again", pos);
+    }
+
+    /// <summary>CW-D51 (re-review): with snow left to each copy the destination can lie a layer or two deeper in snow; the
+    /// landing check lets an entity onto it (snowlayer-2 here, snowlayer-5 there) and still refuses a full snow block.</summary>
+    void CheckSnowLanding()
+    {
+        var ba = api.World.BlockAccessor;
+        var pos = a.AddCopy(0, 0, 6); var twin = b.AddCopy(0, 0, 6);
+        var blocks = api.ModLoader.GetModSystem<SeamBlocks>();
+        var snowing = AccessTools.Field(typeof(SeamBlocks), "snowing");
+        void Snow(BlockPos at, string code)
+        {
+            snowing.SetValue(blocks, 1);
+            try { ba.SetBlock(code == null ? 0 : Block(code).Id, at); }
+            finally { snowing.SetValue(blocks, 0); }
+        }
+        ba.SetBlock(Block("planks-oak-ud").Id, pos);
+        Snow(pos.UpCopy(), "snowlayer-2");
+        Snow(twin.UpCopy(), "snowlayer-5");
+        var wrap = api.ModLoader.GetModSystem<SeamWrapSystem>();
+        var passable = AccessTools.Method(typeof(SeamWrapSystem), "IsPassable");
+        var probe = api.World.ClassRegistry.CreateEntity(api.World.GetEntityType(new AssetLocation("game:boat-raft-aged")));
+        // Standing on the source's snowlayer-2, landing at the same height on the other side
+        bool Passable() => (bool)passable.Invoke(wrap, new object[] { twin.X + 0.5, pos.Y + 1.125, twin.Z + 0.5, probe });
+        bool onDeeperSnow = At(pos).Id == At(twin).Id && At(twin.UpCopy()).Code.Path == "snowlayer-5" && Passable();
+        Snow(twin.UpCopy(), "snowblock");
+        bool onSnowBlock = Passable();
+        Check(onDeeperSnow && !onSnowBlock, $"the landing check lets an entity onto a deeper snow layer, not into a snow block (layer {onDeeperSnow}, block {onSnowBlock})");
+        Snow(pos.UpCopy(), null); Snow(twin.UpCopy(), null);
+        ba.SetBlock(0, pos);
+        Equal("the snow landing test leaves both copies cleared", pos);
+    }
+
+    /// <summary>CW-D51 (re-review): a journal cell holding only a snow layer, as 1.0.4 to 1.1.0-rc.4 journaled vanilla's
+    /// snow, is dropped at the next load (the reload checks it).</summary>
+    void JournalOldSnow()
+    {
+        var blocks = api.ModLoader.GetModSystem<SeamBlocks>();
+        foreach (var (dz, code) in new[] { (7, "game:snowlayer-3"), (8, "game:tallgrass-medium-snow2") })
+        {
+            var cell = a.AddCopy(0, 0, dz);
+            journal[cell] = new SeamBlocks.Cell { X = cell.X, Y = cell.Y, Z = cell.Z, Solid = code, Fluid = "game:air" };
+            AccessTools.Method(typeof(SeamBlocks), "Index").Invoke(blocks, new object[] { cell });
+        }
     }
 
     /// <summary>A block entity whose class has no registered name can't be made on the other side: each copy keeps its
@@ -271,9 +344,10 @@ public class SeamEditSmoke : ModSystem
                     Check(MirroringOn() && journal.Contains(bad) && At(bad).Id == 0, "an unknown journaled block is skipped and kept, mirroring stays on");
                     CheckEntityWrap(() => CheckOffThreadUnload(() => SetUpHopper(() =>
                     {
-                        // Last: on a build without the per-cell guard it switches mirroring off
+                        // On a build without the per-cell guard it switches mirroring off
                         CheckCaptureFailure();
-                        End(null);
+                        // Last: it shuts the server down in the same tick
+                        QueueAtShutdown();
                     })));
                 });
             });
@@ -296,6 +370,38 @@ public class SeamEditSmoke : ModSystem
             api.WorldManager.UnloadChunkColumn(src.X / 32, src.Z / 32);
             Check(queued && ba.GetChunkAtBlockPos(src) == null && At(dst).Id == oak,
                 $"an off-thread change is captured before its column unloads (queued until then: {queued})");
+            next();
+        }));
+    }
+
+    /// <summary>First half of the shutdown drain test (CW-0009): a change reported off the main thread, both copies loaded,
+    /// and the server stopped in the same tick, before SeamBlocks' tick could capture it. The 1.22 server disposes the mods
+    /// before its shutdown save, so the drain has to happen in Dispose.</summary>
+    void QueueAtShutdown()
+    {
+        var src = a.AddCopy(0, 0, 3840); var dst = b.AddCopy(0, 0, 3840);
+        Load(src, () => Load(dst, () =>
+        {
+            var ba = api.World.BlockAccessor;
+            int oak = Block("planks-oak-ud").Id;
+            var chunk = ba.GetChunkAtBlockPos(src); chunk.Unpack();
+            chunk.Data[((src.Y & 31) * 32 + (src.Z & 31)) * 32 + (src.X & 31)] = oak;
+            chunk.MarkModified();
+            Task.Run(() => ba.MarkBlockModified(src)).Wait();
+            Check(At(src).Id == oak && At(dst).Id != oak, "an off-thread change waits for the next tick (the server stops in this one)");
+            End(null, stopNow: true);
+        }));
+    }
+
+    /// <summary>Second half: after the restart both copies hold the change queued at the shutdown.</summary>
+    void CheckShutdownDrain(Action next)
+    {
+        var src = a.AddCopy(0, 0, 3840); var dst = b.AddCopy(0, 0, 3840);
+        Load(src, () => Load(dst, () =>
+        {
+            int oak = Block("planks-oak-ud").Id;
+            Check(At(src).Id == oak && At(dst).Id == oak,
+                $"a change queued off the main thread in the shutdown tick reaches the other copy (source {At(src).Code}, other copy {At(dst).Code})");
             next();
         }));
     }
@@ -444,12 +550,14 @@ public class SeamEditSmoke : ModSystem
         if (packet.ExchangeBlock != null) packets.Add((player.ClientId, packet.Id, packet.ExchangeBlock.X, packet.ExchangeBlock.Y, packet.ExchangeBlock.Z));
         return false;
     }
-    void End(string error)
+    /// <param name="stopNow">Stop the server in this tick (from the main thread ShutDown stops it at once), else 250 ms later.</param>
+    void End(string error, bool stopNow = false)
     {
         if (done) return; done = true;
         if (error != null) { failures++; Mod.Logger.Error("SEAMEDIT FAIL " + error); }
         Mod.Logger.Notification("SEAMEDIT RESULT {0} checks={1} failures={2} reload={3}", failures == 0 ? "PASS" : "FAIL", checks, failures, reload);
-        api.Event.RegisterCallback(_ => api.Server.ShutDown(), 250);
+        if (stopNow) api.Server.ShutDown();
+        else api.Event.RegisterCallback(_ => api.Server.ShutDown(), 250);
     }
 }
 

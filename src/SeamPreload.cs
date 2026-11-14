@@ -7,6 +7,7 @@ using Getter = System.Func<object, object>;
 using SetGetter = System.Func<object, System.Collections.Generic.HashSet<long>>;
 using System.Reflection;
 using HarmonyLib;
+using Vintagestory.API.Config;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
@@ -259,7 +260,7 @@ namespace CylinderWorld
             double speed = Math.Sqrt(a.Vx * a.Vx + a.Vz * a.Vz);
             double hx = speed > 0.5 ? a.Vx / speed : (east ? 1 : -1), hz = speed > 0.5 ? a.Vz / speed : 0;
 
-            const int cs = 32;
+            const int cs = GlobalConstants.ChunkSize;
             int ocx = (int)(outX / cs), ocz = (int)(outZ / cs);
             int maxCx = sapi.WorldManager.MapSizeX / cs, maxCz = sapi.WorldManager.MapSizeZ / cs;
             int r = Math.Max(1, cfg.PreSendDiscRadius), ahead = Math.Max(0, cfg.PreSendAhead);
@@ -275,7 +276,7 @@ namespace CylinderWorld
                     if (dx * dx + dz * dz > r * r && !(along >= 0 && along <= span && across <= 3)) continue;
                     int cx = ocx + dx, cz = ocz + dz;
                     if (cx < 0 || cz < 0 || cx >= maxCx || cz >= maxCz) continue;
-                    targets.Add((Key(cx, cz), cx, cz, dx * dx + dz * dz));
+                    targets.Add((ColumnKey.Of(cx, cz), cx, cz, dx * dx + dz * dz));
                 }
             }
             targets.Sort((m, n) => m.prio.CompareTo(n.prio));
@@ -314,13 +315,13 @@ namespace CylinderWorld
             old.Clear();
             foreach (long key in a.Window.Keys)
             {
-                if (!current.Contains(key)) old.Add((key, Math.Max(Math.Abs(Cx(key) - ocx), Math.Abs(Cz(key) - ocz))));
+                if (!current.Contains(key)) old.Add((key, Math.Max(Math.Abs(ColumnKey.X(key) - ocx), Math.Abs(ColumnKey.Z(key) - ocz))));
             }
             if (old.Count == 0) return;
             old.Sort((m, n) => n.dist.CompareTo(m.dist));
             int over = Math.Max(0, a.Window.Count + missing - cap);
             keep.TryGetValue(plr.PlayerUID, out var kept);
-            int chunksY = sapi.WorldManager.MapSizeY / 32;
+            int chunksY = sapi.WorldManager.MapSizeY / GlobalConstants.ChunkSize;
             dropped.Clear();
             foreach (var (key, dist) in old)
             {
@@ -330,7 +331,7 @@ namespace CylinderWorld
                 if (kept == null) continue;
                 for (int cy = 0; cy < chunksY; cy++)
                 {
-                    long index = sapi.WorldManager.ChunkIndex3D(Cx(key), cy, Cz(key));
+                    long index = sapi.WorldManager.ChunkIndex3D(ColumnKey.X(key), cy, ColumnKey.Z(key));
                     if (kept.Remove(index)) dropped.Add(index);
                 }
             }
@@ -344,7 +345,7 @@ namespace CylinderWorld
         int ViewRadius(IServerPlayer plr, SeamParams p)
         {
             int view = AllowedRadius(plr) + 1;
-            if (p.MistDensity > 0) view = Math.Min(view, (int)Math.Ceiling(Math.Log(100) / p.MistDensity / 32) + 1);
+            if (p.MistDensity > 0) view = Math.Min(view, (int)Math.Ceiling(Math.Log(100) / p.MistDensity / GlobalConstants.ChunkSize) + 1);
             return view;
         }
 
@@ -353,7 +354,7 @@ namespace CylinderWorld
         {
             long now = sapi.World.ElapsedMilliseconds;
             if (radii.TryGetValue(plr.PlayerUID, out var known) && now - known.at < 1000) return known.radius;
-            int radius = (int)Math.Ceiling(plr.WorldData.LastApprovedViewDistance / 32.0);
+            int radius = (int)Math.Ceiling(plr.WorldData.LastApprovedViewDistance / (double)GlobalConstants.ChunkSize);
             object client = radiusFeature.On ? ClientOf(plr) : null;
             if (client != null)
             {
@@ -380,7 +381,7 @@ namespace CylinderWorld
         {
             object client = ClientOf(plr);
             var has = Read(connChunkSent, client);
-            int chunksY = sapi.WorldManager.MapSizeY / 32, sent = 0;
+            int chunksY = sapi.WorldManager.MapSizeY / GlobalConstants.ChunkSize, sent = 0;
             // SendChunk only queues; vanilla sends that queue a batch per tick in no particular order. Queue more only once
             // it is nearly empty, so the columns nearest the exit really go first.
             if (Read(connForceChunks, client) is HashSet<long> queued && queued.Count > chunksY * SendsPerTick) return;
@@ -388,12 +389,12 @@ namespace CylinderWorld
             // Nearest the exit first; equal distances in window order (as a stable sort would)
             sendOrder.Clear();
             int order = 0;
-            foreach (var (k, state) in a.Window) if (state == Col.Loaded) sendOrder.Add((k, Sq(Cx(k) - ocx) + Sq(Cz(k) - ocz), order++));
+            foreach (var (k, state) in a.Window) if (state == Col.Loaded) sendOrder.Add((k, Sq(ColumnKey.X(k) - ocx) + Sq(ColumnKey.Z(k) - ocz), order++));
             sendOrder.Sort((m, n) => m.dist != n.dist ? m.dist.CompareTo(n.dist) : m.order.CompareTo(n.order));
             foreach (var (key, _, _) in sendOrder)
             {
                 if (sent >= SendsPerTick) break;
-                int cx = Cx(key), cz = Cz(key);
+                int cx = ColumnKey.X(key), cz = ColumnKey.Z(key);
                 if (client != null && !RegionReady(client, cx, cz)) continue;
                 for (int cy = 0; cy < chunksY; cy++)
                 {
@@ -420,7 +421,7 @@ namespace CylinderWorld
             try
             {
                 int rs = sapi.WorldManager.RegionSize;
-                long region = sapi.WorldManager.MapRegionIndex2D(cx * 32 / rs, cz * 32 / rs);
+                long region = sapi.WorldManager.MapRegionIndex2D(cx * GlobalConstants.ChunkSize / rs, cz * GlobalConstants.ChunkSize / rs);
                 if (connMapRegionSent(client).Contains(region)) return true;
                 connForceRegions(client).Add(region);
                 // Vanilla flushes forced regions only in a tick that also sends forced chunks or map chunks
@@ -445,7 +446,7 @@ namespace CylinderWorld
             dropped.Clear();
             foreach (var (key, state) in a.Window)
             {
-                var mapChunk = sapi.WorldManager.GetMapChunk(Cx(key), Cz(key));
+                var mapChunk = sapi.WorldManager.GetMapChunk(ColumnKey.X(key), ColumnKey.Z(key));
                 if (mapChunk != null) mapChunk.MarkFresh();
                 else if (state != Col.Requested) dropped.Add(key);
             }
@@ -472,17 +473,17 @@ namespace CylinderWorld
             a.JumpSent = a.JumpLeft = a.JumpDrained = 0;
             if (Read(connChunkSent, ClientOf(plr)) is not HashSet<long> sentSet) return;
             // Delivered, not just queued: every chunk of the column is in vanilla's sent set
-            int chunksY = sapi.WorldManager.MapSizeY / 32;
+            int chunksY = sapi.WorldManager.MapSizeY / GlobalConstants.ChunkSize;
             foreach (var (key, state) in a.Window)
             {
                 bool all = state == Col.Sent;
-                for (int cy = 0; all && cy < chunksY; cy++) all = sentSet.Contains(sapi.WorldManager.ChunkIndex3D(Cx(key), cy, Cz(key)));
+                for (int cy = 0; all && cy < chunksY; cy++) all = sentSet.Contains(sapi.WorldManager.ChunkIndex3D(ColumnKey.X(key), cy, ColumnKey.Z(key)));
                 if (all) a.JumpSent++;
             }
             if (!Keeping) return;
 
             Indexing(out long mulX, out long mulZ);
-            int ocx = (int)(fromX / 32), ocz = (int)(fromZ / 32), ncx = (int)(p.Wrap(fromX) / 32);
+            int ocx = (int)(fromX / GlobalConstants.ChunkSize), ocz = (int)(fromZ / GlobalConstants.ChunkSize), ncx = (int)(p.Wrap(fromX) / GlobalConstants.ChunkSize);
             int r = a.Radius > 0 ? a.Radius : ViewRadius(plr, p), reach = AllowedRadius(plr) + 2;
             if (!keep.TryGetValue(plr.PlayerUID, out var kept)) keep[plr.PlayerUID] = kept = new HashSet<long>();
             var beyond = new List<long>();
@@ -496,7 +497,7 @@ namespace CylinderWorld
                 if (dx * dx + dz * dz <= r * r)
                 {
                     kept.Add(index);
-                    if (columns.Add(Key(cx, cz))) a.Set(Key(cx, cz), Col.Sent);
+                    if (columns.Add(ColumnKey.Of(cx, cz))) a.Set(ColumnKey.Of(cx, cz), Col.Sent);
                 }
                 else beyond.Add(index);
             }
@@ -534,9 +535,9 @@ namespace CylinderWorld
             foreach (long index in indices)
             {
                 d.Hidden.Add(index);
-                if (d.ColumnSet.Add(Key((int)(index % mulX), (int)(index / mulX % mulZ))))
+                if (d.ColumnSet.Add(ColumnKey.Of((int)(index % mulX), (int)(index / mulX % mulZ))))
                 {
-                    d.Columns.Add(Key((int)(index % mulX), (int)(index / mulX % mulZ)));
+                    d.Columns.Add(ColumnKey.Of((int)(index % mulX), (int)(index / mulX % mulZ)));
                     added++;
                 }
             }
@@ -553,7 +554,7 @@ namespace CylinderWorld
         {
             if (drains.Count == 0) return;
             long now = sapi.World.ElapsedMilliseconds;
-            int chunksY = sapi.WorldManager.MapSizeY / 32;
+            int chunksY = sapi.WorldManager.MapSizeY / GlobalConstants.ChunkSize;
             List<string> done = null;
             foreach (var (uid, d) in drains)
             {
@@ -563,14 +564,14 @@ namespace CylinderWorld
                 {
                     // Or the server unloads them by itself meanwhile and tells the client in one packet
                     d.LastFresh = now;
-                    for (int i = d.Next; i < d.Columns.Count; i++) sapi.WorldManager.GetMapChunk(Cx(d.Columns[i]), Cz(d.Columns[i]))?.MarkFresh();
+                    for (int i = d.Next; i < d.Columns.Count; i++) sapi.WorldManager.GetMapChunk(ColumnKey.X(d.Columns[i]), ColumnKey.Z(d.Columns[i]))?.MarkFresh();
                 }
                 int released = 0;
                 for (; released < d.PerTick * DrainBatchTicks && d.Next < d.Columns.Count; released++, d.Next++)
                 {
                     long key = d.Columns[d.Next];
                     d.ColumnSet.Remove(key);
-                    for (int cy = 0; cy < chunksY; cy++) d.Hidden.Remove(sapi.WorldManager.ChunkIndex3D(Cx(key), cy, Cz(key)));
+                    for (int cy = 0; cy < chunksY; cy++) d.Hidden.Remove(sapi.WorldManager.ChunkIndex3D(ColumnKey.X(key), cy, ColumnKey.Z(key)));
                 }
                 if (released > 0)
                 {
@@ -609,9 +610,6 @@ namespace CylinderWorld
             return a;
         }
 
-        static long Key(int cx, int cz) => ((long)cx << 32) | (uint)cz;
-        static int Cx(long key) => (int)(key >> 32);
-        static int Cz(long key) => (int)(uint)key;
         static int Sq(int v) => v * v;
 
         // ---------------------------------------------------------------- the patch (server main thread)

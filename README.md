@@ -1,10 +1,10 @@
 # Cylinder World — Vintage Story 1.22
 
-**13 November - 1.1.0-rc.4 (release candidate, companion of Earth 2.0.0):** the whole mod was reviewed (area audits,
-Codex correctness and design reviews) and fixed, and gains a per-world seam mist switch. Generated terrain stays the same
+**14 November - 1.1.0 (companion of Earth 2.0.0):** the whole mod was reviewed (area audits, Codex correctness and
+design reviews, a final code review) and fixed, and gains a per-world seam mist switch. Generated terrain stays the same
 as 1.0.4 except the fixes listed here and, in new plain Cylinder World worlds, the landform layout (CW-D50). Worlds made
 before keep their saved behaviour. Requires Vintage Story 1.22.0 or later; Earth is optional. Details and reasons:
-[decisions](docs/DECISIONS.md) CW-D38 to CW-D50.
+[decisions](docs/DECISIONS.md) CW-D38 to CW-D52.
 - **Game updates:** every Harmony patch and every reflected game member goes through one place (CW-D39). If a game update
   renames one, adds an overload or breaks a transpiler, only that feature switches off, with one log line naming what
   is missing (`Cylinder World: … is off: …`).
@@ -49,6 +49,13 @@ before keep their saved behaviour. Requires Vintage Story 1.22.0 or later; Earth
 - Also carries the earlier four-round review's fixes, which the 1.0.x line didn't have (they were play-tested in
   0.11.15-playtest.1 to .9): exposure kept over relogs, per-side temperature clamps, sea ice near players first, overworld
   only, guarded Earth patches and more ([review follow-ups](docs/review-followups.md)).
+- **Code review of 14 November** ([review](docs/code-review-2026-11-14.md)): an edit of the last moment before the server
+  stops reaches the other seam copy too (the shutdown save missed it); vanilla's snow is left to each seam copy, as the
+  seasonal sea ice is, instead of being copied cell by cell (CW-D51: in a winter at the seam the journal held 100,000 or
+  more cells and a save took up to 124 ms; the two sides can be a snow layer apart at the jump, and a crossing on foot lands in it); each
+  save logs the journal's size and `/cyl info` shows it in the band; `FlattenSeabed` is saved with each new world
+  (CW-D52); a damaged seam record refuses the world with a sentence instead of a bare error; a server with the mod
+  switched off puts none of its patches on the game; cold exposure ignores other dimensions.
 
 **1 November seam crossing - 1.0.4:** the crossing fixes from the 0.11.15 play-test line (author-tested in playtest.9): no black frame at a jump (CW-D32); the jump keeps the player's motion and the plants' look (CW-D33); creatures and other players stay visible across the jump line (CW-D34); the whole local motion history moves with a jump (CW-D35); block changes in the seam band update both copies, and unloaded counterparts replay a saved journal (CW-D36). The play-test review-round fixes are not included. **The polar layout is now automatic** (CW-D37): `PolarIceMode` "default" gives a new Earth world Earth's polar layout (Antarctica, seasonal sea ice, land across the seam) and any other new world the ice plateaus, so players set nothing; "earth" behaves the same but warns outside Earth, and the new "plateaus" forces the plateaus. Saved worlds keep their layout.
 
@@ -366,13 +373,19 @@ dotnet build -c Release
 ```
 
 Output: `release/cylinderworld-<version>.zip`, with the version from `modinfo.json` (e.g. `cylinderworld-0.11.0.zip`).
-Copy it into `%APPDATA%\VintagestoryData\Mods` and remove any older `cylinderworld*.zip` there. The build replaces only
-its own version's zip in `release/` and leaves every other version there (CW-0007), packs exactly the DLL, PDB,
+Copy it into `%APPDATA%\VintagestoryData\Mods` and remove any older `cylinderworld*.zip` there. The build never replaces
+an existing zip unless `-p:Overwrite=true` (the zip of a published version has the same name as every later build until
+the version changes; CW-0016), writes elsewhere with `-p:PackageFile=<path>`, leaves every other version in `release/`
+(CW-0007), packs exactly the DLL, PDB,
 modinfo, `worldconfig.json`, LICENSE and assets, fails if a sync tool left a `(# Name clash #)` copy in `src` or
 `assets`, and fails if the zip is over the Mod DB's 40,000,000 bytes.
 
 Checks (each starts its own temporary local-only server or runs offline; none touches the normal game data; every server
-check fails when a feature logs `Cylinder World: … is off:`):
+check fails when a feature logs `Cylinder World: … is off:`). `tests/Run-All.ps1` runs them all with one summary
+(`-Offline`, `-Earth` for the polar smoke, `-OldWorld`); the server checks make their own config from the game's
+defaults (`tests/common.ps1`) and run beside other servers:
+- `tests/Contract/run.ps1` (offline): every member Earth, World Map and Sea read by reflection, by their own lookups
+  ([list](docs/REFLECTION-SURFACE.md)).
 - `tests/SeamChecks/smoke.ps1`: the seam checks below, plus a terrain digest (`digest.txt`, one SHA-256 per generated
   chunk column) to show that two builds generate the same terrain (`-ModZip`/`-ModDll` run another build).
 - `tests/SeamEdits/smoke.ps1` and `client.ps1`: mirrored block edits, containers and the journal (new + reload), and the
@@ -385,7 +398,8 @@ check fails when a feature logs `Cylinder World: … is off:`):
 - `tests/WallLavaChecks/run.ps1`: no lava or water rivulets in the walls (the cleanup in the rest of the polar ice,
   CW-D43, was checked with a one-off probe, not yet in this test). `oldworld.ps1`: a world generated by 1.0.1 (wall lava
   and all) opened with this build loses its saved wall sources when the columns load (CW-D49).
-- `tests/WorldOptions/run.ps1` (offline): the seam mist world option (CW-D48) and `polarEquatorDistance` (CW-D50).
+- `tests/WorldOptions/run.ps1` (offline): the seam mist world option (CW-D48), `polarEquatorDistance` (CW-D50) and the
+  settings saved with a world (CW-D47, CW-D52).
 
 `tests/SeamChecks/smoke.ps1` (after a Release build) runs a temporary local-only server and checks the seam-crossing
 code a server can reach: pre-sent chunks kept through vanilla's unload, rain identical and continuous around the
@@ -440,7 +454,7 @@ What to watch while testing:
 | `SeamHalfWidth` | 0 = auto | H: width of the ocean band at each edge. Layout v10: the identical seabed ends 160 to 224 blocks inside H (wavy), then ramps outward into natural terrain. Auto = t + view radius + 64 + 64 + 160, so the ramp is never in view of the jump line. An explicit value should include those 224 blocks |
 | `CoastFalloff` | 1024 | how far past H the forced ocean fades back to vanilla terrain |
 | `SeabedDepth` | 40 | mean depth of the band's seabed below sea level (v10 adds relief of up to depth / 2.5, at most 14 blocks) |
-| `FlattenSeabed` | true | rebuild the band as identical seabed + salt water. Set it before creating a world: it is read live, so changing it later makes new band chunks differ from the other side of the jump (and Wmap draws the band from it) |
+| `FlattenSeabed` | true | rebuild the band as identical seabed + salt water. Saved with each new world since 1.1 (CW-D52); worlds made before read it at every start, so set it before creating a world. Off, both sides of the jump keep natural terrain and block edits there aren't mirrored |
 | `ProtectSeamBand` | true | no building or breaking inside the band (creative mode is exempt) |
 | `WrapOtherEntities` | true | also wrap drifting boats, items and animals |
 | `PrepareDistance` | 96 | start loading the destination this many blocks before the line. The destination columns are kept from unloading until the jump (0.9.1), so slow approaches, such as a Magelan ship at 7 blocks/s, don't lose them just before arriving |
@@ -484,8 +498,8 @@ them later only affects new worlds. A new world also gets the planet's equator-t
 `polarEquatorDistance` (CW-D50), so other mods that read it agree with the latitude. Lava or water that vanilla's
 rivulets left in the polar ice of a world made before 1.0.2 is taken out the first time each column loads (CW-D49). Read live on every start: the mist and jump-fog settings, `WallBuildMargin`,
 `ProtectSeamBand`, `WrapOtherEntities`, `WallGuard`, `JumpCooldown`, `SyncWeatherAcrossSeam`, the Prepare/PreSend/Unload
-keys, `SeasonalSeaIce`, the winter-rule keys and `FlattenSeabed` (see its row), and `ExtendTemperatureRange` in worlds
-made with 1.0.x. A config file
+keys, `SeasonalSeaIce`, the winter-rule keys, and `FlattenSeabed` and `ExtendTemperatureRange` in worlds made with
+1.0.x. A config file
 that fails to load (a typo, a wrong type) is left as it is and the session runs on the defaults, with an error in the
 server log; fix the file and restart.
 Worlds created with mod 0.1.x keep no walls and vanilla climate; 0.2.x worlds keep their center-warmest layout;
@@ -500,9 +514,9 @@ zones, you cross about 3 km of sea at the seam. How the band, blend and coast fi
 
 | File | Side | What it does |
 |---|---|---|
-| `src/SeamParams.cs` | both | geometry and math (wrap, mirror, distances, ocean falloff), synced to clients |
+| `src/SeamParams.cs` (+ `.Seam`, `.Polar`, `.Climate`, `.Noise`) | both | the saved layout and its constants; geometry and math (wrap, mirror, distances, ocean falloff, walls, climate), synced to clients |
 | `src/CylinderWorldCore.cs` | both | config, saves the geometry into the world, network sync, `/cyl` command |
-| `src/SeamWorldGen.cs` | server | forces oceanicity and removes upheaval near the X edges; flattens the band before and after vegetation; builds the mantle curtain under each jump line; builds the ice walls; installs the planet climate; forces land at the moved spawn and moves the story locations with it |
+| `src/SeamWorldGen.cs` (+ `.Setup`, `.Band`, `.Polar`, `.Columns`, `.Rivulets`, `.BlockEntities`) | server | forces oceanicity and removes upheaval near the X edges; flattens the band before and after vegetation; builds the mantle curtain under each jump line; builds the ice walls; installs the planet climate; forces land at the moved spawn and moves the story locations with it |
 | `src/PolarClimateLayer.cs` | server | wraps vanilla's climate generator and replaces temperature with the equator-to-pole curve |
 | `src/BlockWallIce.cs` + `assets/cylinderworld/` | both | the unbreakable wall ice block (ice and snow variants) |
 | `src/SeamWrapSystem.cs` | server | the jump (player, their mount, other entities), safety check, band protection |
@@ -516,6 +530,7 @@ zones, you cross about 3 km of sea at the seam. How the band, blend and coast fi
 | `src/SeaIcePolicy.cs`, `src/SeaIceSystem.cs`, `src/BlockSeaIce.cs` | server / both for blocks | shared seasonal coverage policy, bounded loaded-chunk updates (each loaded copy of a seam column updated on its own, not through the seam journal), and saltwater ice blocks |
 | `src/GameFeature.cs` | both | the one place every Harmony patch and reflected game member goes through: a feature resolves its targets first, patches all or nothing, and switches off alone with one log line when a game update removed something (CW-D39) |
 | `src/CylinderCommands.cs` | server | the `/cyl` commands |
+| `src/ColumnKey.cs` | server | one chunk column's x and z packed into a long (the preloader's and the sea ice's keys) |
 | `src/SeamBlocks.cs` | server | block edits in the seam band reach both copies, and a journal replays them to a copy that wasn't loaded (CW-D36, CW-D40) |
 | `src/SeamEntities.cs` | both | server: entity tracking around the ring; the wrap notices that tell a client which teleport is a seam jump. Client: other creatures and players kept on the lap nearest the player (CW-D34) |
 | `src/SeamSmoothJump.cs` | client | the jump keeps the player's motion and history, and blocks beyond a jump line look like their twin one ring away (CW-D33, CW-D35) |
@@ -531,6 +546,7 @@ zones, you cross about 3 km of sea at the seam. How the band, blend and coast fi
   jump line there too; deeper rock away from the line is not mirrored (nobody can dig there in survival: the seam band
   is protected).
 - Classic (non-map) clouds can blink for a frame or two at a jump while they are rebased.
+- Each seam copy keeps its own snow (CW-D51): at the jump the two sides can differ by a snow layer.
 - Superflat worlds: the server keeps vanilla's latitude and seasons while the client uses the planet's (CW-P06).
 - The HUD and world map show raw X. Fix: show longitude; draw the map tiled.
 - The jump is server-driven, so there's a ~50 ms plus ping hitch. It's most visible on boats: your client drives

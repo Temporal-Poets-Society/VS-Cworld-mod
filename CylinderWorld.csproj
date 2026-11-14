@@ -77,10 +77,11 @@
   </UsingTask>
 
   <!-- Release build also produces a ready-to-install zip in .\release, named with the version from modinfo.json
-       (release\cylinderworld-1.1.0.zip). Only that version's zip is replaced, and only once the new one has passed the
-       size check; zips of other versions there are never touched (CW-0007: they can be the only local copies of
-       published releases). The zip is made from a fresh folder with exactly the mod's files (assembly, symbols,
-       modinfo, worldconfig, licence, assets), so nothing left over in bin from an earlier build is shipped. -->
+       (release\cylinderworld-1.1.0.zip), or at -p:PackageFile=<path>. An existing zip there is not replaced unless
+       -p:Overwrite=true (CW-0016: the zip of a published version, prerelease included, carries the same name as every
+       later build until the version changes); zips of other versions are never touched (CW-0007: they can be the only
+       local copies of published releases). The zip is made from a fresh folder with exactly the mod's files (assembly,
+       symbols, modinfo, worldconfig, licence, assets), so nothing left over in bin from an earlier build is shipped. -->
   <PropertyGroup>
     <ModVersion>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\modinfo.json')), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</ModVersion>
   </PropertyGroup>
@@ -89,8 +90,11 @@
     <PropertyGroup>
       <ModStage>$(MSBuildProjectDirectory)\obj\$(Configuration)\modzip\</ModStage>
       <ModZipBuilt>$(MSBuildProjectDirectory)\obj\$(Configuration)\cylinderworld-$(ModVersion).zip</ModZipBuilt>
-      <ModZip>$(MSBuildProjectDirectory)\release\cylinderworld-$(ModVersion).zip</ModZip>
+      <ModZip>$(PackageFile)</ModZip>
+      <ModZip Condition="'$(ModZip)' == ''">$(MSBuildProjectDirectory)\release\cylinderworld-$(ModVersion).zip</ModZip>
     </PropertyGroup>
+    <Error Condition="Exists('$(ModZip)') And '$(Overwrite)' != 'true'"
+           Text="$(ModZip) exists and is kept (it may be a published version's zip). Pass -p:Overwrite=true to replace it, or -p:PackageFile=&lt;path&gt; to write the zip elsewhere. The assembly in $(OutputPath) is built." />
     <ItemGroup>
       <ModFile Include="$(OutputPath)$(AssemblyName).dll;$(OutputPath)$(AssemblyName).pdb;modinfo.json;worldconfig.json;LICENSE" />
       <ModAsset Include="assets\**\*" Exclude="assets\**\*Name clash*;assets\**\*Edit conflict*" />
@@ -101,8 +105,8 @@
     <ZipDirectory SourceDirectory="$(ModStage)" DestinationFile="$(ModZipBuilt)" Overwrite="true" />
     <CheckModZipSize File="$(ModZipBuilt)" MaxBytes="40000000" />
     <!-- The check deletes a zip over the limit and logs the error, but the target goes on: only a zip that is still there
-         replaces the zip of this version in release\ (no other file there is deleted or changed). -->
-    <MakeDir Condition="Exists('$(ModZipBuilt)')" Directories="$(MSBuildProjectDirectory)\release" />
+         is copied to ModZip (no other file there is deleted or changed). -->
+    <MakeDir Condition="Exists('$(ModZipBuilt)')" Directories="$([System.IO.Path]::GetDirectoryName('$(ModZip)'))" />
     <Copy Condition="Exists('$(ModZipBuilt)')" SourceFiles="$(ModZipBuilt)" DestinationFiles="$(ModZip)" />
     <Message Condition="Exists('$(ModZipBuilt)')" Importance="high" Text="Release zip: $(ModZip)" />
   </Target>

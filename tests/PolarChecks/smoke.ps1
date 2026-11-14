@@ -1,5 +1,5 @@
 param(
-    [string]$GamePath = "$env:APPDATA\Vintagestory",
+    [string]$GamePath = '',
     # Earth 2.0 (modid earth): its release zip; default the newest earth-*.zip in the suite's Earth\release or the
     # player's VintagestoryData\Mods
     [string]$EarthZip = '',
@@ -21,7 +21,9 @@ param(
 # delete that folder recursively (Remove-Item -Recurse would follow the junction into the store); remove the junction
 # (ModData\earth) on its own first, with [IO.Directory]::Delete on that path alone.
 $ErrorActionPreference='Stop'
-$root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+. (Join-Path $PSScriptRoot '..\common.ps1')
+if (!$GamePath) { $GamePath = Get-TestGamePath }
+$root=$TestRoot
 # the suite root: the first folder above this checkout with suite.json (a worktree sits deeper than the main checkout)
 $suite=$root; while ($suite -and !(Test-Path -LiteralPath (Join-Path $suite 'suite.json'))) { $suite=Split-Path $suite }
 if (!$suite) { $suite=Split-Path $root }
@@ -49,9 +51,10 @@ if (Test-Path -LiteralPath $DataPath) { throw "Use a fresh test data directory: 
 if (!(Test-Path -LiteralPath "$EarthData\data")) { throw "No Earth data store at $EarthData" }
 New-Item -ItemType Directory -Path "$DataPath\Mods\polarsmoke","$DataPath\ModConfig","$DataPath\ModData" -Force | Out-Null
 $DataPath=[IO.Path]::GetFullPath($DataPath)
-$version=(Get-Content -LiteralPath (Join-Path $root 'modinfo.json') -Raw | ConvertFrom-Json).version
+$version=Get-ModVersion
 if (!$ModZip) { $ModZip = Join-Path $root "release\cylinderworld-$version.zip" }
 if (!$ModDll) { $ModDll = "$root\bin\Release\mod\CylinderWorld.dll" }
+Assert-ZipHoldsDll $ModZip $ModDll
 Copy-Item -LiteralPath $ModZip -Destination "$DataPath\Mods\cylinderworld.zip"
 Copy-Item -LiteralPath $EarthZip -Destination "$DataPath\Mods\earth.zip"
 Copy-Item -LiteralPath $HydrologyZip -Destination "$DataPath\Mods"
@@ -65,16 +68,7 @@ $style=$styles | Where-Object { $_.code -eq $PlayStyle } | Select-Object -First 
 if (!$style) { throw "Earth has no play style '$PlayStyle'" }
 $wc=$style.worldConfig
 $mapY=[int]$wc.earthWorldHeight
-# A port free for TCP and UDP both (the server binds both on 127.0.0.1): Windows reserves some ranges for one protocol
-# only, and the other then fails with SocketException 10013
-$port=0
-for ($i=0; $i -lt 100 -and !$port; $i++) {
-    # random candidates below the dynamic range: the OS's own picks come in sequence and can all sit in one excluded range
-    $candidate=Get-Random -Minimum 42000 -Maximum 48999
-    $tcp=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,$candidate)
-    try { $tcp.Start(); [Net.Sockets.UdpClient]::new([Net.IPEndPoint]::new([Net.IPAddress]::Loopback,$candidate)).Dispose(); $port=$candidate } catch { } finally { $tcp.Stop() }
-}
-if (!$port) { throw 'No port is free for both TCP and UDP.' }
+$port=Get-FreePort
 # Earth sets the world's width and length from its size option before the map is built
 $config=[ordered]@{ ServerName='Cylinder World Earth polar smoke'; Ip='127.0.0.1'; Port=$port; Upnp=$false; AdvertiseServer=$false; MaxClients=1
     DefaultRoleCode='crplayer'; Roles=@(@{ Code='crplayer'; Name='Test player'; PrivilegeLevel=100; DefaultGameMode=2; Color='Green'; Privileges=@('chat','build','useblock','controlserver') })
@@ -87,16 +81,7 @@ Set-Content -LiteralPath "$DataPath\ModConfig\cylinderworld.json" -Value '{"Pola
 $off='http://127.0.0.1:9/'
 [ordered]@{ ConfigVersion=5; SelfTest=@{ Enabled=$false }; DataRepo=$off; ElevationRepo=$off; ElevationSource=$off; GroundRepo=$off } |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "$DataPath\ModConfig\earth.json"
-$runtime=(Get-ChildItem 'C:\Program Files\dotnet\shared\Microsoft.NETCore.App' -Directory -Filter '10.*' | Sort-Object Name -Descending | Select-Object -First 1).FullName
-$compiler=(Get-ChildItem 'C:\Program Files\dotnet\sdk' -Directory -Filter '8.*' | Sort-Object Name -Descending | Select-Object -First 1).FullName
-$refs=@(Get-ChildItem -LiteralPath $runtime -Filter '*.dll' | Where-Object { $_.Name -like 'System.*' -and $_.Name -notlike '*.Native.dll' -or $_.Name -in @('mscorlib.dll','netstandard.dll') } | ForEach-Object FullName)
-$refs+=@("$GamePath\VintagestoryAPI.dll","$GamePath\Mods\VSEssentials.dll","$GamePath\Mods\VSSurvivalMod.dll","$GamePath\Lib\0Harmony.dll",$ModDll)
-$argsFile=@('/nologo','/target:library','/langversion:12','/nostdlib+',('/out:"'+$DataPath+'\Mods\polarsmoke\PolarSmoke.dll"'))
-$argsFile+=$refs | ForEach-Object { '/reference:"'+$_+'"' }
-$argsFile+='"'+$PSScriptRoot+'\SmokeMod.cs"'
-Set-Content -LiteralPath "$DataPath\smoke.rsp" -Value $argsFile
-& dotnet "$compiler\Roslyn\bincore\csc.dll" "@$DataPath\smoke.rsp"
-if ($LASTEXITCODE -ne 0) { throw 'Smoke mod compilation failed.' }
+Invoke-GameCompile -GamePath $GamePath -Out "$DataPath\Mods\polarsmoke\PolarSmoke.dll" -Sources @("$PSScriptRoot\SmokeMod.cs") -References @($ModDll)
 Write-Output "Smoke data: $DataPath"
 foreach ($pass in @('new','reload'))
 {
@@ -106,9 +91,7 @@ foreach ($pass in @('new','reload'))
         $saved | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath "$DataPath\ModConfig\cylinderworld.json"
     }
     if (Test-Path -LiteralPath "$DataPath\Logs\server-main.log") { Remove-Item -LiteralPath "$DataPath\Logs\server-main.log" }
-    $proc=Start-Process -FilePath "$GamePath\VintagestoryServer.exe" -ArgumentList @('--dataPath',('"'+$DataPath+'"')) -WorkingDirectory $GamePath -WindowStyle Hidden -RedirectStandardOutput "$DataPath\console-$pass.log" -RedirectStandardError "$DataPath\error-$pass.log" -PassThru
-    Write-Output "Started $pass smoke test, pid $($proc.Id)"
-    if (-not $proc.WaitForExit(1200000)) { Stop-Process -Id $proc.Id; throw "Smoke server timed out; data at $DataPath" }
+    Invoke-TestServer -GamePath $GamePath -DataPath $DataPath -Name $pass -TimeoutSeconds 1200
     $log=Get-Content -LiteralPath "$DataPath\Logs\server-main.log" -Raw
     Copy-Item -LiteralPath "$DataPath\Logs\server-main.log" -Destination "$DataPath\result-$pass.log"
     $log -split '\r?\n' | Where-Object { $_ -match 'POLARSMOKE (PASS|FAIL|Arctic chunk|bound|map)|Earth polar mode|Cylinder World: (spawn|story|this world|.* is off:)|\[Error\]|\[Fatal\]' } | Write-Output

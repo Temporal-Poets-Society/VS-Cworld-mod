@@ -34,10 +34,14 @@ namespace CylinderWorld
             this.capi = capi;
             this.logger = logger;
             this.chunks = chunks;
-            var stats = AccessTools.TypeByName("Vintagestory.Client.RuntimeStats");
-            received = stats == null ? null : AccessTools.Field(stats, "chunksReceived");
-            unloaded = stats == null ? null : AccessTools.Field(stats, "chunksUnloaded");
-            awaitingMesh = stats == null ? null : AccessTools.Field(stats, "chunksAwaitingTesselation");
+            // Through the gateway like every other reflected game member (CW-D39, CW-0015). A game version without them
+            // switches only these statistics off (one line); the trace then reads -1 for all three.
+            var f = new GameFeature("the seam jump trace's chunk statistics", null, logger);
+            var stats = f.Type("Vintagestory.Client.RuntimeStats");
+            received = stats == null ? null : f.Field(stats, "chunksReceived", typeof(int));
+            unloaded = stats == null ? null : f.Field(stats, "chunksUnloaded", typeof(int));
+            awaitingMesh = stats == null ? null : f.Field(stats, "chunksAwaitingTesselation", typeof(int));
+            if (!f.Apply()) received = unloaded = awaitingMesh = null;
         }
 
         /// <summary>A diagnostic: a statistic this game version doesn't have reads -1.</summary>

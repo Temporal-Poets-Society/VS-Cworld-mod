@@ -99,7 +99,8 @@ namespace CylinderWorld
         /// <summary>
         /// How close to either Z edge a world generator's spawn may be. Earth's polar layout has no ice sheet: there it is the
         /// wall and Earth's lifeless kilometre (Earth allows spawns up to 85°). With our plateaus it is the wall zone (wall
-        /// and ice sheet) and PolarMargin, where our own spawn keeps clear of too. Decided before the Earth binding, by the
+        /// and ice sheet) and PolarMargin. (Our own spawn, ComputeParams, keeps only PolarMargin from the wall face; with the
+        /// default temperatures its latitude never comes near either.) Decided before the Earth binding, by the
         /// layout the world asks for; a world that then falls back to the plateaus checks again (KeepSpawnOffPlateaus).
         /// </summary>
         static double SpawnPolarLimit(SeamParams p) =>
@@ -134,6 +135,19 @@ namespace CylinderWorld
 
         ICoreServerAPI sapi;
         IServerNetworkChannel serverChannel;
+
+        /// <summary>CW-0014: this server's config says "Enabled": false, known at StartServerSide (the core loads it first).
+        /// The server systems then put none of their patches on the game.</summary>
+        internal static bool DisabledOn(ICoreServerAPI api) => api.ModLoader.GetModSystem<CylinderWorldCore>()?.Config?.Enabled == false;
+
+        /// <summary>CW-0014: runs <paramref name="off"/> at WorldReady when this world got no params (switched off, or too
+        /// narrow for a seam), so a system takes its patches off the game again. Registered after the core's own WorldReady
+        /// step (every system starts after the core), so it sees the decision.</summary>
+        internal static void WhenWorldHasNoSeam(ICoreServerAPI api, Action off)
+        {
+            var core = api.ModLoader.GetModSystem<CylinderWorldCore>();
+            api.Event.ServerRunPhase(EnumServerRunPhase.WorldReady, () => { if (core?.Params == null) off(); });
+        }
 
         public override double ExecuteOrder() => 0.01;
 
@@ -257,7 +271,15 @@ namespace CylinderWorld
             int worldWidth = sapi.WorldManager.MapSizeX;
 
             byte[] data = save.GetData(SaveKey);
-            SeamParams p = data != null ? SerializerUtil.Deserialize<SeamParams>(data) : null;
+            SeamParams p = null;
+            // A damaged record refuses the world (CW-0015): laying a new layout over the old terrain would cut through it
+            try { if (data != null) p = SerializerUtil.Deserialize<SeamParams>(data); }
+            catch (Exception e)
+            {
+                throw new InvalidOperationException(string.Format(
+                    "Cylinder World: this world's record of its seam, walls and climate (save key '{0}', {1} bytes) can't be read ({2}). The world isn't loaded and nothing in it was changed; restore the save from a backup.",
+                    SaveKey, data.Length, e.Message), e);
+            }
             // Earth 2.0 keeps its own marker (save key "earth-creating", stored at StartPre, so it reaches disk with the new
             // save, and cleared once its params are stored): while it says Earth is still creating this world, so does
             // Cylinder World, so the two never disagree about the seam band, the walls and the spawn, even if the stopped
@@ -303,10 +325,7 @@ namespace CylinderWorld
                 // Also when an earlier record didn't fit (the mod was off here) and a changed config makes one fit now
                 if (!IsNewWorld)
                     Mod.Logger.Warning("Cylinder World was added to an existing world. Chunks that were already generated near the world edges will not have the seam ocean or ice walls, and spawn stays where it is.");
-                // The temperature extension also changes world generation's climate readings, so the world keeps the
-                // value it was made with (CW-D47); worlds saved before this keep reading the config below
-                p.ExtendTemperature = Config.ExtendTemperatureRange;
-                p.ExtendTemperatureFrozen = true;
+                FreezeWorldSettings(p, Config);
                 // Stored only once it fits: a world where the mod is off keeps no record of it
                 save.StoreData(SaveKey, SerializerUtil.Serialize(p));
                 // CW-D50: vanilla's world generators start after WorldReady, so they read the world's own distance
@@ -314,9 +333,7 @@ namespace CylinderWorld
             }
 
             ApplyMistSettings(p, Config, save.WorldConfiguration);
-            p.WallBuildMargin = Math.Max(0, Config.WallBuildMargin);
-            if (!p.ExtendTemperatureFrozen) p.ExtendTemperature = Config.ExtendTemperatureRange;
-            p.SeasonalSeaIce = p.EarthPolarIce && Config.SeasonalSeaIce;
+            ApplyStartSettings(p, Config);
             Params = ServerShared = p;
             // Seasons and the sun path follow the planet's latitude, as on the client (ApplyClientLatitude). In 'standard'
             // worlds the worldgen sets it again after vanilla's (InstallLatitude); in 'superflat' worlds vanilla's map
@@ -467,6 +484,29 @@ namespace CylinderWorld
         /// <summary>The world option that switches the seam mist per world (CW-D48, suite D28/D40): on the Earth tab,
         /// unticked by default, changeable later (applies at the next start).</summary>
         public const string SeamMistKey = "cylinderSeamMist";
+
+        /// <summary>
+        /// A new record: the config settings that shape terrain are fixed with the world, as its layout is. The temperature
+        /// extension changes world generation's climate readings (CW-D47); the flatten builds the band and the jump curtain
+        /// (CW-0011). Records saved before either keep reading the config at every start (ApplyStartSettings).
+        /// </summary>
+        internal static void FreezeWorldSettings(SeamParams p, CylinderWorldConfig config)
+        {
+            p.ExtendTemperature = config.ExtendTemperatureRange;
+            p.ExtendTemperatureFrozen = true;
+            p.FlattenSeabed = config.FlattenSeabed;
+            p.FlattenSeabedFrozen = true;
+        }
+
+        /// <summary>The settings taken from the config at every start (the mist apart, ApplyMistSettings), and the frozen
+        /// ones of a record saved before they were fixed.</summary>
+        internal static void ApplyStartSettings(SeamParams p, CylinderWorldConfig config)
+        {
+            p.WallBuildMargin = Math.Max(0, config.WallBuildMargin);
+            if (!p.ExtendTemperatureFrozen) p.ExtendTemperature = config.ExtendTemperatureRange;
+            if (!p.FlattenSeabedFrozen) p.FlattenSeabed = config.FlattenSeabed;
+            p.SeasonalSeaIce = p.EarthPolarIce && config.SeasonalSeaIce;
+        }
 
         /// <summary>
         /// The mist settings sent to clients in SeamParams, resolved at every start (CW-D48): the world's cylinderSeamMist

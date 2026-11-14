@@ -36,15 +36,21 @@ namespace CylinderWorld
         public override void StartServerSide(ICoreServerAPI api)
         {
             harmony = new Harmony(HarmonyId);
-            tracking = new GameFeature("sending entities across the jump line", harmony, Mod.Logger);
-            try
+            // CW-0014: no patch on a server that has the mod switched off, and off again in a world that gets no seam
+            if (!CylinderWorldCore.DisabledOn(api))
             {
-                var method = tracking.Method(tracking.Type("Vintagestory.Server.PhysicsManager"), "UpdateTrackedEntityState");
-                tracking.Require(AccessTools.PropertyGetter(typeof(EntityPos), nameof(EntityPos.X)) != null, "EntityPos.X");
-                tracking.Patch(method, transpiler: new HarmonyMethod(typeof(SeamEntities), nameof(RingDistance)));
+                var f = new GameFeature("sending entities across the jump line", harmony, Mod.Logger);
+                try
+                {
+                    var method = f.Method(f.Type("Vintagestory.Server.PhysicsManager"), "UpdateTrackedEntityState");
+                    f.Require(AccessTools.PropertyGetter(typeof(EntityPos), nameof(EntityPos.X)) != null, "EntityPos.X");
+                    f.Patch(method, transpiler: new HarmonyMethod(typeof(SeamEntities), nameof(RingDistance)));
+                }
+                catch (Exception e) { f.Require(false, e.GetType().Name + ": " + e.Message); }
+                tracking = f;
+                f.Apply();
+                CylinderWorldCore.WhenWorldHasNoSeam(api, () => f.Unpatch());
             }
-            catch (Exception e) { tracking.Require(false, e.GetType().Name + ": " + e.Message); }
-            tracking.Apply();
 
             serverApi = api;
             noticeChannel = api.Network.RegisterChannel(NoticeChannel).RegisterMessageType<SeamWrapNotice>();
@@ -184,6 +190,11 @@ namespace CylinderWorld
         /// players who join then are told so at once.</summary>
         internal static volatile bool AnnouncesWraps;
 
+        /// <summary>The one rule for who travels with a carrier (CW-0021, CW-P09): the player is the carrier or sits on it.
+        /// The wrap takes every online player it holds along (SeamWrapSystem.PlayersAboard); the notice goes to those whose
+        /// client is playing.</summary>
+        internal static bool Aboard(IPlayer plr, Entity carrier) => plr?.Entity is { } ep && (ep == carrier || ep.MountedOn?.Entity == carrier);
+
         /// <summary>
         /// Server, just before a seam wrap teleports <paramref name="carrier"/> by <paramref name="laps"/> circumferences
         /// (±1): tells the players who are it or ride it, so their client takes that teleport, and only that one, for a
@@ -196,9 +207,9 @@ namespace CylinderWorld
             var api = serverApi;
             if (channel == null || api == null || carrier == null || laps == 0) return;
             AnnouncesWraps = true;
+            // Those aboard whose client can take a packet now
             var aboard = api.World.AllOnlinePlayers.OfType<IServerPlayer>()
-                .Where(p => p.ConnectionState == EnumClientState.Playing && p.Entity != null
-                    && (p.Entity == carrier || p.Entity.MountedOn?.Entity == carrier)).ToArray();
+                .Where(p => p.ConnectionState == EnumClientState.Playing && Aboard(p, carrier)).ToArray();
             if (aboard.Length > 0) channel.SendPacket(new SeamWrapNotice { EntityId = carrier.EntityId, Laps = Math.Sign(laps) }, aboard);
         }
 

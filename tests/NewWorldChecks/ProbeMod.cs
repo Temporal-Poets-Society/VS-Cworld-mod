@@ -100,9 +100,13 @@ public class NewWorldProbe : ModSystem
             if (core.Params != null || core.Config?.Enabled != false) throw new Exception("Cylinder World is on although its unreadable config says \"Enabled\": false");
             if (File.ReadAllText(Path.Combine(GamePaths.ModConfig, "newworld-keyspawn.txt")) != save.DefaultSpawn?.x + " " + save.DefaultSpawn?.z)
                 throw new Exception("the default spawn changed while Cylinder World was off");
+            // CW-0014: a server that has the mod switched off gets none of its server patches
+            if (ServerPatches() is string on) throw new Exception("server patches on while Cylinder World is off: " + on);
             Mod.Logger.Notification("NEWWORLD PASS {0}", pass);
             return;
         }
+        if (ServerPatches() is not string patched || !patched.Contains("cylinderworld.seamblocks") || !patched.Contains("cylinderworld.polarrivulets"))
+            throw new Exception("seam mirroring or the rivulet guard is not patched in a world with a seam");
         var p = core.Params ?? throw new Exception("Cylinder World is not active");
         object isNew = typeof(CylinderWorldCore).GetProperty("IsNewWorld", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(core);
         Mod.Logger.Notification("NEWWORLD {0}: spawn x={1} z={2}, default spawn {3},{4}, IsNew={5}, IsNewWorld={6}, Earth polar={7}, story scaling {8}",
@@ -130,6 +134,17 @@ public class NewWorldProbe : ModSystem
             }
         }
         Mod.Logger.Notification("NEWWORLD PASS {0}", pass);
+    }
+
+    /// <summary>The Harmony owners of Cylinder World's server patches that are on the game, or null for none.</summary>
+    static string ServerPatches()
+    {
+        var owners = new System.Collections.Generic.SortedSet<string>();
+        foreach (var method in HarmonyLib.Harmony.GetAllPatchedMethods())
+            foreach (string owner in HarmonyLib.Harmony.GetPatchInfo(method).Owners)
+                if (owner is "cylinderworld.seamblocks" or "cylinderworld.seamblocks.snow" or "cylinderworld.seamentities" or "cylinderworld.preload" or "cylinderworld.polarrivulets")
+                    owners.Add(owner);
+        return owners.Count == 0 ? null : string.Join(", ", owners);
     }
 
     void CheckKeyWorld(SeamParams p, ISaveGame save, object isNew)

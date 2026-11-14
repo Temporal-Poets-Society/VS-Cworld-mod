@@ -47,8 +47,13 @@ namespace CylinderWorld
 
             // Built before the listeners that use it, and on its own: pre-loading only makes the jump smoother, so if a game
             // update breaks it beyond what its features catch, crossing still works without it (one warning)
-            try { preloader = new SeamPreloader(api, core, Mod.Logger); }
-            catch (Exception e) { Mod.Logger.Warning("Cylinder World: seam pre-loading is off: {0}", e); }
+            // (CW-0014: not on a server that has the mod switched off; taken off again in a world that gets no seam)
+            if (!CylinderWorldCore.DisabledOn(api))
+            {
+                try { preloader = new SeamPreloader(api, core, Mod.Logger); }
+                catch (Exception e) { Mod.Logger.Warning("Cylinder World: seam pre-loading is off: {0}", e); }
+                CylinderWorldCore.WhenWorldHasNoSeam(api, () => { preloader?.Dispose(); preloader = null; });
+            }
             api.Event.RegisterGameTickListener(OnPlayerTick, 50);
             api.Event.RegisterGameTickListener(OnEntityTick, 1000);
             api.Event.CanPlaceOrBreakBlock += OnCanPlaceOrBreak;
@@ -321,10 +326,7 @@ namespace CylinderWorld
         {
             var aboard = new List<IServerPlayer>();
             foreach (IServerPlayer plr in sapi.World.AllOnlinePlayers)
-            {
-                var ep = plr.Entity;
-                if (ep != null && (ep == carrier || ep.MountedOn?.Entity == carrier)) aboard.Add(plr);
-            }
+                if (SeamEntities.Aboard(plr, carrier)) aboard.Add(plr);
             return aboard;
         }
 
@@ -381,8 +383,14 @@ namespace CylinderWorld
 
             bool Overlaps(BlockPos pos, int layer)
             {
-                var boxes = ba.GetBlock(pos, layer)?.GetCollisionBoxes(ba, pos);
+                var block = ba.GetBlock(pos, layer);
+                var boxes = block?.GetCollisionBoxes(ba, pos);
                 if (boxes == null) return false;
+                // A snow layer (up to a quarter block): each seam copy keeps its own snow (CW-D51), so the destination's can
+                // stand a layer or two higher than the source's, by vanilla's dither or a copy's catch-up after loading.
+                // Landing that deep in snow is what vanilla does to anyone standing where snow builds up; a full snow block
+                // still blocks the way.
+                if (block.BlockMaterial == EnumBlockMaterial.Snow && ShallowSnow(boxes)) return false;
                 foreach (var b in boxes)
                 {
                     if (b != null && pos.X + b.X1 < x2 && pos.X + b.X2 > x1 && pos.Y + b.Y1 < y2 && pos.Y + b.Y2 > y1
@@ -390,6 +398,14 @@ namespace CylinderWorld
                 }
                 return false;
             }
+        }
+
+        /// <summary>Every collision box tops out within a quarter block of the block's floor (vanilla's snow layers: none,
+        /// 0.125 or 0.25 high).</summary>
+        static bool ShallowSnow(Cuboidf[] boxes)
+        {
+            foreach (var b in boxes) if (b != null && b.Y2 > 0.25f + 1e-4f) return false;
+            return true;
         }
 
         bool IsPending(Entity e)

@@ -38,6 +38,18 @@ namespace CylinderWorld
         int loading;
         /// <summary>Inside Suppress: writes are neither copied nor journaled, and drop an older cell for their position.</summary>
         int quiet;
+        /// <summary>
+        /// Inside vanilla's snow accumulation commit (WeatherSimulationSnowAccum.OnServerTick100ms, main thread): its writes
+        /// are neither copied nor journaled, and an older cell for their position stays (CW-0010, CW-D51). Each copy keeps
+        /// its own snow, as each keeps its own seasonal sea ice (CW-D40): vanilla brings every copy up to date by itself
+        /// (each map chunk's SnowAccum, from region snapshots SeamWeatherSync keeps equal on both sides). Mirrored, every
+        /// snow layer that changed in the band became a cell, a copy and two packets per client, and the journal held
+        /// 100,000-170,000 cells in a winter at the seam (bench, 14 November 2026); the other copy also read the copied
+        /// snow as its starting level and added its own missed interval on top. A cell journaled before (a player's block)
+        /// is kept: replayed to the other copy, that copy's own accumulation covers it.
+        /// </summary>
+        int snowing;
+        static GameFeature snowFeature;
         /// <summary>Chunk coordinates of the overworld players, republished by the main thread for RandomTick, which runs
         /// on the block-ticking thread and must not walk the player list there.</summary>
         volatile (int x, int y, int z)[] playerChunks = Array.Empty<(int, int, int)>();
@@ -75,6 +87,17 @@ namespace CylinderWorld
         const byte KeyCopy = 1, TwinCopy = 2;
         /// <summary>World saves since the server started (Save).</summary>
         int saves;
+        /// <summary>A journal this large is reported at every save (CW-0010): it is written whole on the main thread at
+        /// each save and replayed after every restart (about 41 ms and 3.8 MB at 100,000 cells).</summary>
+        const int LargeJournal = 10000;
+        /// <summary>Cells captured since the last save, and of them those a bulk update reported (vanilla's snow
+        /// accumulation commits through SendBlockUpdateBulkMinimal).</summary>
+        int captured, capturedBulk, snowLeft;
+        bool inBulk;
+        /// <summary>The last save's figures, for /cyl info.</summary>
+        internal int JournalCells => cells.Count;
+        internal int LastSaveBytes { get; private set; }
+        internal double LastSaveMs { get; private set; }
 
         readonly Dictionary<BlockPos, Cell> cells = new();
         readonly Dictionary<(int x, int z), HashSet<BlockPos>> columns = new();
@@ -96,6 +119,10 @@ namespace CylinderWorld
             api.Event.GameWorldSave += Save;
             api.Event.RegisterGameTickListener(OnTick, 100);
             api.Event.ChunkColumnUnloaded += OnColumnUnloaded;
+            // CW-0014: the patches below run on every block change and wrap block entities' tick listeners server-wide; a
+            // server that has the mod switched off gets none, and a world that gets no seam has them taken off again
+            if (CylinderWorldCore.DisabledOn(api)) return;
+            CylinderWorldCore.WhenWorldHasNoSeam(api, () => { feature?.Unpatch(); snowFeature?.Unpatch(); });
 
             // All or nothing: half the mutation paths would mirror some edits live and journal none of the others.
             var f = new GameFeature("seam edit mirroring", new Harmony(HarmonyId), Mod.Logger);
@@ -135,14 +162,29 @@ namespace CylinderWorld
             catch (Exception e) { f.Require(false, "its game members as they were (" + e.GetType().Name + ": " + e.Message + ")"); }
             feature = f;
             f.Apply();
+
+            // CW-0010 (CW-D51): vanilla's snow accumulation is left to each copy, as the seasonal sea ice is (CW-D40). Off,
+            // snow is mirrored cell by cell as before: correct, but it churns the journal.
+            var snow = new GameFeature("snow left to each seam copy", new Harmony(HarmonyId + ".snow"), Mod.Logger);
+            snow.Patch(snow.Method(typeof(Vintagestory.GameContent.WeatherSimulationSnowAccum), "OnServerTick100ms", new[] { typeof(float) }),
+                prefix: new HarmonyMethod(typeof(SeamBlocks), nameof(BeforeSnow)), finalizer: new HarmonyMethod(typeof(SeamBlocks), nameof(AfterSnow)));
+            snowFeature = snow;
+            snow.Apply();
         }
 
         public override void Dispose()
         {
             if (instance == this)
             {
+                // The 1.22 server disposes mods before its shutdown save (ServerSystemModHandler.OnBeginShutdown comes
+                // before ServerSystemLoadAndSaveGame's), so Save finds the feature gone and can't drain then: capture what
+                // is still queued now, while the chunks are loaded, the server's threads suspended and the chunk save to
+                // come. Left queued, a change of the last tick was saved on its own copy only (CW-0009).
+                if (feature?.On == true && core?.Params != null && (OnMainThread || api?.Server.IsShuttingDown == true)) SafeDrain();
                 feature?.Unpatch();
                 feature = null;
+                snowFeature?.Unpatch();
+                snowFeature = null;
                 instance = null;
             }
             if (api != null) api.Event.ChunkColumnUnloaded -= OnColumnUnloaded;
@@ -152,16 +194,22 @@ namespace CylinderWorld
         /// <summary>Main thread: capture what was changed off it, and publish what RandomTick needs to know about the players.</summary>
         void OnTick(float dt)
         {
-            if (feature?.On == true) SafeDrain();
-            var list = new List<(int, int, int)>();
+            if (feature?.On != true) return;
+            SafeDrain();
+            // Republished only when a player changed chunk, joined or left (CW-0014): RandomTick reads the array as it is
+            playerScratch.Clear();
             foreach (var player in api.World.AllOnlinePlayers)
             {
                 var pos = player.Entity?.Pos;
-                if (pos?.Dimension == 0) list.Add(((int)Math.Floor(pos.X / 32), (int)Math.Floor(pos.Y / 32), (int)Math.Floor(pos.Z / 32)));
+                if (pos?.Dimension == 0) playerScratch.Add(((int)Math.Floor(pos.X / 32), (int)Math.Floor(pos.Y / 32), (int)Math.Floor(pos.Z / 32)));
             }
-            playerChunks = list.ToArray();
+            var now = playerChunks;
+            bool same = now.Length == playerScratch.Count;
+            for (int i = 0; same && i < now.Length; i++) same = now[i] == playerScratch[i];
+            if (!same) playerChunks = playerScratch.ToArray();
             tickRange = api.Server.Config.BlockTickChunkRange;
         }
+        readonly List<(int x, int y, int z)> playerScratch = new();
 
         /// <summary>
         /// Vanilla raises this on the main thread before it takes the column's chunks away (ServerSystemUnloadChunks,
@@ -230,7 +278,8 @@ namespace CylinderWorld
         internal static bool Twin(SeamParams p, BlockPos pos, out BlockPos twin)
         {
             twin = null;
-            if (p == null || pos == null || pos.dimension != 0 || pos.X < 0 || pos.X >= p.WorldWidth
+            // A world made without the flatten (CW-0011) has no identical part: each side keeps its natural terrain
+            if (p == null || !p.FlattenSeabed || pos == null || pos.dimension != 0 || pos.X < 0 || pos.X >= p.WorldWidth
                 || !p.InSeamBand(pos.X + 0.5)) return false;
             int x = (int)p.Mirror(pos.X);
             if (x < 0 || x >= p.WorldWidth || x == pos.X || !p.InSeamBand(x + 0.5)
@@ -326,6 +375,13 @@ namespace CylinderWorld
             if (core.Params == null) return;
             byte[] data = api.WorldManager.SaveGame.GetData(SaveKey);
             if (data == null) return;
+            // A world without the flatten pairs nothing (Twin): its journal stays in the save as it is, as one does while
+            // mirroring is off, so a pre-1.1 world switched back to the flatten finds the cells it was still waiting for
+            if (!core.Params.FlattenSeabed)
+            {
+                Mod.Logger.Notification("Seam edits: this world's band isn't flattened (FlattenSeabed off), so nothing is mirrored; its saved journal ({0} bytes) is kept as it is.", data.Length);
+                return;
+            }
             List<Cell> list;
             try { list = SerializerUtil.Deserialize<List<Cell>>(data); }
             catch (Exception e)
@@ -339,12 +395,16 @@ namespace CylinderWorld
                 Mod.Logger.Error("Seam edits: the saved journal can't be read ({0}); kept as '{1}', starting an empty one.", e.Message, backup);
                 return;
             }
-            int unpaired = 0;
+            int unpaired = 0, snow = 0;
             foreach (var cell in list)
             {
                 if (cell == null) continue;
                 // Journaled before pairing stopped at the band's identical part: each copy keeps what its chunks hold
                 if (!Twin(core.Params, new BlockPos(cell.X, cell.Y, cell.Z), out _)) { unpaired++; continue; }
+                // Natural snow cover that older builds journaled (vanilla's snow accumulation, before CW-D51): each copy
+                // keeps its own snow now. Kept, it was written over the current snow of both copies after every restart,
+                // in any season, and a cell whose other copy never loads never left the journal.
+                if (NaturalSnow(cell)) { snow++; continue; }
                 cell.Solid = Intern(cell.Solid);
                 cell.Fluid = Intern(cell.Fluid);
                 cell.EntityClass = Intern(cell.EntityClass);
@@ -356,23 +416,47 @@ namespace CylinderWorld
             }
             Mod.Logger.Notification("Seam edits: restored {0} changed cells", cells.Count);
             if (unpaired > 0) Mod.Logger.Notification("Seam edits: dropped {0} cells outside the band's identical part (they have no twin)", unpaired);
+            if (snow > 0) Mod.Logger.Notification("Seam edits: dropped {0} cells holding only snow cover (a snow layer, or tall grass under snow; each copy keeps its own snow since 1.1, CW-D51)", snow);
         }
+
+        /// <summary>A journal cell that holds only natural snow cover: a snow layer, or tall grass under snow (its snow
+        /// variants, the one plant the band's land rebuild places); no block entity, no decoration, no fluid.</summary>
+        static bool NaturalSnow(Cell cell) =>
+            cell.Solid != null && cell.Entity == null && cell.Decors == null && (cell.Fluid == null || cell.Fluid == "game:air")
+            && (cell.Solid.StartsWith("game:snowlayer-", StringComparison.Ordinal)
+                || cell.Solid.StartsWith("game:tallgrass-", StringComparison.Ordinal) && cell.Solid.Contains("-snow", StringComparison.Ordinal));
 
         void Save()
         {
-            if (core.Params == null) return;
-            // The shutdown save can run on the thread that stopped the server (singleplayer exit, the console, Ctrl+C).
-            // ServerMain.Stop has suspended the server's threads by then, so the queues are drained alone there too:
-            // left queued, those changes were saved on their own copy and never captured for the other one.
+            // Not without the flatten either: the journal saved before stays as it was (Load)
+            if (core.Params == null || !core.Params.FlattenSeabed) return;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            // Periodic saves drain here. The shutdown save comes after Dispose, which has drained already (the feature is
+            // gone by then); a save on another thread while the server stops finds its threads suspended.
             if (feature?.On == true && (OnMainThread || api.Server.IsShuttingDown)) SafeDrain();
             // A cell both copies have held since before the previous save is in the chunks that save wrote (dirty
             // chunks are written with the journal; unloaded ones were written when they unloaded): drop it. The journal
             // keeps only what a copy that isn't loaded still lacks.
             List<BlockPos> held = null;
-            foreach (var (key, cell) in cells) if (cell.Missing == 0 && cell.HeldSince >= 0 && cell.HeldSince < saves) (held ??= new()).Add(key);
+            int pending = 0, snow = 0;
+            foreach (var (key, cell) in cells)
+            {
+                if (cell.Missing == 0 && cell.HeldSince >= 0 && cell.HeldSince < saves) { (held ??= new()).Add(key); continue; }
+                if (cell.Missing != 0) pending++;
+                if (cell.Solid != null && cell.Solid.Contains("snow")) snow++;
+            }
+            int dropped = held?.Count ?? 0;
             if (held != null) foreach (var key in held) Forget(key);
             saves++;
-            api.WorldManager.SaveGame.StoreData(SaveKey, SerializerUtil.Serialize(cells.Values.ToList()));
+            byte[] data = SerializerUtil.Serialize(cells.Values.ToList());
+            api.WorldManager.SaveGame.StoreData(SaveKey, data);
+            LastSaveMs = watch.Elapsed.TotalMilliseconds;
+            LastSaveBytes = data.Length;
+            string line = string.Format("Seam edits: the journal holds {0} changed cells ({1:0.00} MB; {2} with snow, {3} waiting for a copy that isn't loaded), saved in {4:0.0} ms; since the last save {5} cells captured ({6} from bulk updates), {7} snow updates left to each copy, {8} cells left the journal",
+                cells.Count, data.Length / 1048576.0, snow, pending, LastSaveMs, captured, capturedBulk, snowLeft, dropped);
+            if (cells.Count >= LargeJournal || LastSaveMs >= 50) Mod.Logger.Notification(line);
+            else Mod.Logger.Debug(line);
+            captured = capturedBulk = snowLeft = 0;
         }
 
         // ---------------------------------------------------------------- the patches
@@ -407,11 +491,16 @@ namespace CylinderWorld
         {
             var s = instance;
             if (s == null || feature?.On != true) return;
+            bool main = false;
             try
             {
-                if (s.map == __instance) foreach (var pos in updates.Keys) if (s.InBand(pos)) s.Notify(pos);
+                if (s.map != __instance) return;
+                main = OnMainThread;
+                if (main) s.inBulk = true;
+                foreach (var pos in updates.Keys) if (s.InBand(pos)) s.Notify(pos);
             }
             catch (Exception e) { feature.Fail(e); }
+            finally { if (main) s.inBulk = false; }
         }
 
         /// <summary>
@@ -441,9 +530,21 @@ namespace CylinderWorld
             catch (Exception e) { feature.Fail(e); }
         }
 
+        static void BeforeSnow(out SeamBlocks __state)
+        {
+            __state = snowFeature?.On == true && OnMainThread ? instance : null;
+            if (__state != null) __state.snowing++;
+        }
+        static Exception AfterSnow(Exception __exception, SeamBlocks __state)
+        {
+            if (__state != null) __state.snowing--;
+            return __exception;
+        }
+
         void Capture(BlockPos pos)
         {
             if (applying > 0 || loading > 0 || !Twin(core.Params, pos, out var twin)) return;
+            if (snowing > 0) { snowLeft++; return; }
             var key = Key(pos, twin);
             // A write inside Suppress: each copy keeps its own, and no older cell is left to overwrite it later
             if (quiet > 0) { if (cells.ContainsKey(key)) Forget(key); return; }
@@ -489,6 +590,8 @@ namespace CylinderWorld
             }
             if (!cells.ContainsKey(key)) Index(key);
             cells[key] = cell;
+            captured++;
+            if (inBulk) capturedBulk++;
             // The copy it was read from holds it; the other one now too, if loaded
             cell.Missing = key.X == pos.X ? TwinCopy : KeyCopy;
             if (TryApply(cell, twin)) Held(cell, TwinCopy | KeyCopy);
@@ -738,15 +841,24 @@ namespace CylinderWorld
         }
         static void TickListener(BlockEntity __instance, ref Action<float> onGameTick)
         {
-            if (feature?.On != true || __instance.Api?.Side != EnumAppSide.Server) return;
+            if (feature?.On != true || __instance.Api?.Side != EnumAppSide.Server || !MayPause(__instance.Pos)) return;
             var original = onGameTick;
             onGameTick = dt => { if (Simulate(__instance.Pos)) original(dt); };
         }
         static void PositionTickListener(BlockEntity __instance, ref Action<IWorldAccessor, BlockPos, float> onGameTick)
         {
-            if (feature?.On != true || __instance.Api?.Side != EnumAppSide.Server) return;
+            if (feature?.On != true || __instance.Api?.Side != EnumAppSide.Server || !MayPause(__instance.Pos)) return;
             var original = onGameTick;
             onGameTick = (world, pos, dt) => { if (Simulate(pos)) original(world, pos, dt); };
+        }
+        /// <summary>CW-0014: only a block entity in the band past a jump line can ever be paused (Simulate's own first
+        /// tests), and a block entity never moves: every other one keeps its listener unwrapped. Without params yet, wrapped
+        /// as before.</summary>
+        static bool MayPause(BlockPos pos)
+        {
+            var s = instance;
+            var p = s?.core.Params;
+            return p == null || pos == null || s.InBand(pos) && p.PastJumpLine(pos.X);
         }
         /// <summary>Block-ticking thread: reads only the params and the players published by OnTick.</summary>
         static bool RandomTick(BlockPos atPos, ref bool __result)

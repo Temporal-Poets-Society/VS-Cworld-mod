@@ -186,6 +186,10 @@ namespace CylinderWorld
                 "You: absolute x={5:0.0}, longitude {6:0.00}°, {7:0} blocks from the nearest jump line{8}.",
                 p.WorldWidth, p.Circumference, p.JumpInset, p.WorldWidth - p.JumpInset, p.SeamHalfWidth - p.JumpInset,
                 pos.X, p.Longitude(pos.X), p.DistToJumpLine(pos.X), p.InSeamBand(pos.X) ? " (inside the seam band)" : "");
+            var journal = sapi.ModLoader.GetModSystem<SeamBlocks>();
+            if (journal != null && p.InSeamBand(pos.X))
+                msg += string.Format("\nSeam journal: {0} changed cells; the last save wrote {1:0.00} MB in {2:0.0} ms.",
+                    journal.JournalCells, journal.LastSaveBytes / 1048576.0, journal.LastSaveMs);
 
             if (p.HasWalls)
             {

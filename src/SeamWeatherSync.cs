@@ -268,11 +268,17 @@ namespace CylinderWorld
         /// <summary>The entry last said to answer without a rain patch (logged once).</summary>
         object unpatchedLogged;
 
+        /// <summary>This instance's Start counted it among the users (CW-0015): only then does its Dispose count it out. Mod
+        /// loading that stops before Start (another mod throws first) left the count one short, and the next world in the
+        /// session never patched the fold.</summary>
+        bool counted;
+
         public override void Start(ICoreAPI api)
         {
             this.api = api;
             lock (sync)
             {
+                counted = true;
                 if (users++ == 0)
                 {
                     var f = new GameFeature("continuous rain across the seam", new Harmony(HarmonyId), api.Logger);
@@ -306,7 +312,7 @@ namespace CylinderWorld
             }
             lock (sync)
             {
-                if (--users == 0)
+                if (counted && --users == 0)
                 {
                     feature?.Unpatch();
                     feature = null;
