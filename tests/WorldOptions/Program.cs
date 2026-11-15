@@ -82,7 +82,11 @@ class Program
         var attr = attrs[0];
         Check(attr.GetProperty("code").GetString() == "cylinderSeamMist" && attr.GetProperty("category").GetString() == "earth"
             && attr.GetProperty("dataType").GetString() == "bool" && attr.GetProperty("default").GetString() == "false"
-            && !attr.GetProperty("onlyDuringWorldCreate").GetBoolean(), "Earth tab, unticked by default (D40), changeable later");
+            && !attr.GetProperty("onlyDuringWorldCreate").GetBoolean(), "unticked by default (D40), changeable later");
+        // (1.1.1) off the world-creation screen: vanilla still writes the default (false) into every new world
+        // (WorldConfig.allDefaultValues) and /worldconfig still sets it, so only the screen changes
+        Check(attr.TryGetProperty("onCustomizeScreen", out var shown) && shown.ValueKind == JsonValueKind.False,
+            "not on the world-creation screen (onCustomizeScreen false); set with /worldconfig");
         using var lang = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "assets", "game", "lang", "worldconfig-en.json")));
         foreach (string key in new[] { "worldconfig-category-earth", "worldattribute-cylinderSeamMist", "worldattribute-cylinderSeamMist-desc",
             "worldconfig-cylinderSeamMist-true", "worldconfig-cylinderSeamMist-false" })

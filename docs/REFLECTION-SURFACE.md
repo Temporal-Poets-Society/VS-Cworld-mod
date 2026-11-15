@@ -16,7 +16,7 @@ check together.
 | `CylinderWorldCore.SetSpawn(int, int)` | public instance method, returns `bool` | Earth (new worlds) |
 | save key `cylinderworld-seam` | the world's record (`CylinderWorldCore.SaveKey`) | Earth (its new-world test, `EarthMapSystem.CylinderRecordKey`) |
 | `Config.Enabled`, `PolarWalls`, `PolarClimate` | `bool` | Earth (`CylinderCompat.HasEarthConfiguration`) |
-| `Config.FlattenSeabed` | `bool` | World Map (worlds saved before 1.1; newer ones have `SeamParams.FlattenSeabed`) |
+| `Config.FlattenSeabed` | `bool` | World Map (worlds saved before 1.1, which have no `SeamParams.FlattenSeabedFrozen`) |
 
 ## `SeamParams`
 
@@ -26,6 +26,7 @@ check together.
 | `Circumference`, `EquatorZ`, `PoleDistance`, `WallFaceMax`, `PolarZoneDepth` | number properties | Earth, World Map; Sea reads `Circumference` as a property |
 | `SeamWorkReach` | number property (World Map tests for the property) | World Map |
 | `PolarClimate`, `EarthPolarIce`, `FlattenSeabed` | `bool` fields | Earth, World Map |
+| `FlattenSeabedFrozen` | `bool` field, saved (`[ProtoMember(41)]`, CW-D52) | World Map 0.5.3: set, it takes `FlattenSeabed` from here; unset or missing, from `Config.FlattenSeabed` (a rename reads as unset, silently) |
 | `IsPlanetLayout`, `HasWalls` | `bool` properties | World Map |
 | `ExtendTemperature` | writable `bool` field | Earth (switches it off) |
 | `EarthPolar` | field (`EarthPolarModel`, server only) | World Map |
@@ -45,6 +46,12 @@ check together.
 | `Latitude(double)` | method returning `double` | World Map |
 | `Sample(double, double)` | method returning `EarthPolarModel.Column` | World Map |
 | `LifelessBorder` | `int` constant | World Map |
+
+## The world option (not reflection)
+
+| Key | Kind | Set by |
+| --- | --- | --- |
+| `cylinderSeamMist` | world config `bool` (`worldconfig.json`, default false; CW-D48) | admins with `/worldconfig`, read at every start; since 1.1.1 not on the world-creation screen (`onCustomizeScreen: false`), and vanilla still writes its default into new worlds. Renaming it orphans the value every world saved. `tests/WorldOptions` checks the declaration |
 
 ## How each one looks them up
 

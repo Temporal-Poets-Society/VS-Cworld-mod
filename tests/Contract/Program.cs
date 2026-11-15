@@ -116,6 +116,11 @@ class Program
             Check(MemberType(p, name, PublicInstance) == typeof(bool), Earth, $"SeamParams.{name} (bool)");
         foreach (string name in new[] { "IsPlanetLayout", "HasWalls", "EarthPolarIce", "FlattenSeabed" })
             Check(MemberType(p, name, PublicInstance) == typeof(bool), Wmap, $"SeamParams.{name} (bool)");
+        // World Map 0.5.3 (WorldSource.Create): Member(params, "FlattenSeabedFrozen") is true, then SeamParams.FlattenSeabed;
+        // else Config.FlattenSeabed. Renamed or no longer a bool, it reads as unset and every 1.1 world follows the config
+        // silently (CW-D52)
+        Check(MemberType(p, "FlattenSeabedFrozen", PublicInstance) == typeof(bool), Wmap,
+            "SeamParams.FlattenSeabedFrozen (bool; set, World Map takes SeamParams.FlattenSeabed instead of the config's)");
         // Earth's TrySet: a writable public instance field
         var extend = p.GetField("ExtendTemperature", PublicInstance);
         Check(extend != null && extend.FieldType == typeof(bool) && !extend.IsInitOnly, Earth, "SeamParams.ExtendTemperature, a writable bool field (it switches it off)");
@@ -171,7 +176,7 @@ class Program
 
         // World Map's chart cache key: the ProtoMember fields, less runtime settings (named Mist*, JumpFog*, WallBuildMargin)
         var proto = p.GetFields(PublicInstance).Where(f => f.GetCustomAttributes(false).Any(a => a.GetType().Name == "ProtoMemberAttribute")).Select(f => f.Name).ToArray();
-        Check(proto.Contains("FlattenSeabed") && proto.Contains("Version") && proto.Contains("NoiseSeed") && proto.Contains("WallBuildMargin"), Wmap,
+        Check(proto.Contains("FlattenSeabed") && proto.Contains("FlattenSeabedFrozen") && proto.Contains("Version") && proto.Contains("NoiseSeed") && proto.Contains("WallBuildMargin"), Wmap,
             "the saved layout's ProtoMember fields (its chart cache key)");
         // CW-0020: the runtime settings carry [RuntimeSetting], which a cache key can read instead of a name prefix
         var runtime = p.GetFields(PublicInstance).Where(f => f.GetCustomAttributes(false).Any(a => a.GetType().Name == "RuntimeSettingAttribute"))

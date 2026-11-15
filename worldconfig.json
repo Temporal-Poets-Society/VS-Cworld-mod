@@ -6,7 +6,8 @@
       "code": "cylinderSeamMist",
       "dataType": "bool",
       "default": "false",
-      "onlyDuringWorldCreate": false
+      "onlyDuringWorldCreate": false,
+      "onCustomizeScreen": false
     }
   ]
 }

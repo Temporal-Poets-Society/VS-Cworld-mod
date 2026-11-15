@@ -64,3 +64,5 @@ Other servers may run on the machine: each check stops only its own.
 - New worlds write `polarEquatorDistance` (CW-D50), which also moves vanilla's landforms in plain worlds: to compare
   SeamChecks digests with an older build, give the older one that value in its template (CW-D50's verification).
 - The zip carries `worldconfig.json` (the `cylinderSeamMist` option, CW-D48): keep its `playStyles` an empty list.
+  The option is off the creation screen (`onCustomizeScreen: false`, 1.1.1); vanilla still writes its default into new
+  worlds and `/worldconfig` still sets it.

@@ -1,5 +1,9 @@
 # Cylinder World — Vintage Story 1.22
 
+**15 November - 1.1.1:** the **Seam mist** world option is no longer on the world-creation screen's Earth tab. New
+worlds still get it off (its default), and an admin still switches it with `/worldconfig cylinderSeamMist true` (or
+`false`); a change applies at the next start of the world or server. Nothing else changed (CW-D48).
+
 **14 November - 1.1.0 (companion of Earth 2.0.0):** the whole mod was reviewed (area audits, Codex correctness and
 design reviews, a final code review) and fixed, and gains a per-world seam mist switch. Generated terrain stays the same
 as 1.0.4 except the fixes listed here and, in new plain Cylinder World worlds, the landform layout (CW-D50). Worlds made
@@ -8,8 +12,9 @@ before keep their saved behaviour. Requires Vintage Story 1.22.0 or later; Earth
 - **Game updates:** every Harmony patch and every reflected game member goes through one place (CW-D39). If a game update
   renames one, adds an overload or breaks a transpiler, only that feature switches off, with one log line naming what
   is missing (`Cylinder World: … is off: …`).
-- **Seam mist per world** (CW-D48): the world option **Seam mist** (`cylinderSeamMist`, Earth tab, unticked by default,
-  changeable later) switches the seam mist and jump fog; worlds without it follow the config's `SeamMist`.
+- **Seam mist per world** (CW-D48): the world option **Seam mist** (`cylinderSeamMist`, off by default, set with
+  `/worldconfig`; on the Earth tab in 1.1.0 only) switches the seam mist and jump fog; worlds without it follow the
+  config's `SeamMist`.
 - **Rain with Earth's weather** (CW-D38): the seam's rain fold steps aside while another mod drives vanilla's weather
   (Earth's `seacontracts:weather` role), and only when that mod's rain patch is really on. It no longer blocks other
   mods' rain patches, and failing weather pairs back off.
@@ -465,7 +470,7 @@ What to watch while testing:
 | `UnloadOldSideDelay` / `UnloadOldSideSeconds` | 1.5 / 6 | near the line your client keeps both sides (0.11.14). Leaving the seam zone, the other side stays this long, then is unloaded a few columns at a time over this many seconds (0 = vanilla, all at once) |
 | `JumpCooldown` | 3 | seconds after a jump before the same player can jump again (0 = off, 0.9.2). A jump makes the client drop its whole view and load the other side; this lets it finish first. Turning straight back leaves you in the open sea just past the line until then (at most 32 blocks past it). Since 0.11.14 the side you just left stays on your client, so a quick return doesn't reload it |
 | `SyncWeatherAcrossSeam` | true | copy the weather state between the regions on both sides of the seam (worlds from 0.4+) |
-| `SeamMist` | true | the seam mist and jump fog in worlds without the world option **Seam mist** (`cylinderSeamMist`, Earth tab, unticked by default, changeable later; CW-D48). Off = no mist and no fog pulse, and the destination is pre-sent to the whole view radius. The world's option wins |
+| `SeamMist` | true | the seam mist and jump fog in worlds without the world option **Seam mist** (`cylinderSeamMist`, off by default in new worlds, set with `/worldconfig`; CW-D48). Off = no mist and no fog pulse, and the destination is pre-sent to the whole view radius. The world's option wins |
 | `MistDensity` / `MistMin` / `MistRange` | 0.012 / 0.2 / 200 | sea mist around the jump lines |
 | `JumpFogMin` / `JumpFogSeconds` | 0.6 / 1.5 | right after a jump the mist thickens to this fog minimum and eases back (0 = off). Since 0.11.6 only when chunks within 4 of the arrival point are still missing; with the destination pre-sent there is no pulse |
 | `PolarWalls` | true | ice walls at the north and south edges |

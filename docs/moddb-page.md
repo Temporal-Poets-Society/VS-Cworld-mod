@@ -54,7 +54,8 @@ Reference: [Mod DB upload guide](https://www.vintagestory.at/forums/topic/18633-
 1.1.0 - companion of Earth 2.0.0
 The whole mod was reviewed and fixed. New worlds generate as in 1.0.4 except the fixes and, in new plain (non-Earth)
 worlds, the landform layout; existing worlds keep their layout.
-- Seam mist per world: a world option on the Earth tab (unticked by default, changeable later).
+- Seam mist per world: a world option, off by default, switched by an admin with `/worldconfig cylinderSeamMist true`
+  (1.1.1: no longer on the world-creation screen).
 - Block edits across the seam: chests and other containers reach the other side, the edit journal stays small, and
   edits from the last moment before a server stops are kept. Each side keeps its own snow.
 - Crossing: players and what they ride wait until the other side is loaded; other players and shared boats stay
