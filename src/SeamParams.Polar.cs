@@ -227,6 +227,8 @@ namespace CylinderWorld
             {
                 if (dz < WallFaceMax) return true;
                 if (EarthPolar == null) return false; // client: terrain is sent as ordinary chunk blocks
+                // Neither ice below can lie between 55°S and 66°N: say so without sampling Earth (CW-0024)
+                if (!EarthPolarModel.IceLatitude(EarthPolar.Latitude(z))) return false;
                 var sample = EarthPolar.Sample(x, z);
                 return sample.Latitude <= -60 && sample.Glacier || HasSeaIce(x, z, sample);
             }

@@ -87,6 +87,28 @@ Agreed after the author confirmed satisfaction with the core experience. Publish
 
 The Release build succeeds with 0 warnings and 0 errors. The 1.0.0 ZIP has the same files and byte-identical runtime/assets as the preserved 0.11.14 package; only `modinfo.json` differs. No new game test was run for this metadata-only release. No world-layout version or save behavior changed. The existing 0.11.14 ZIP is preserved. Publishing instructions: [Mod DB page](moddb-page.md).
 
+## Release 1.1.2 (19 November 2026)
+
+1.1.1 with the polar exposure tick's fix (CW-0024, `29963fa`; the author's go-ahead, 19 November). In Earth mode
+`IsIceCovered` sampled Earth's terrain model for every column off the Wall, so `PolarExposureSystem`'s one-second tick
+did it for every online player at any latitude: on an Earth 1:10 server with 30 players in 30 places, 139 ms a tick on
+the main thread (about 4.6 ms and 3 MB a player, each reading a different GLO-90 tile). Neither of Earth mode's ice
+kinds can lie between 55°S and 66°N, and Earth's column latitude is the same number as the adapter's `Latitude(z)`, so
+`EarthPolarModel.IceLatitude` rules those columns out before sampling; `SeaIceSystem`'s chunk filter uses the same
+predicate (its bounds were already these). The verdict is unchanged everywhere, so generated worlds and play are
+1.1.1's. Re-measured with the same profiled 30-bot run: the polar tick under 0.8 ms/s (was 123 ms/s), 21.5 ticks a
+second (was 17), single ticks p95 33 ms (was 123). Players north of 66°N or south of 55°S still sample Earth once a
+second each (not measured).
+
+The file: `release/cylinderworld-1.1.2.zip`, 204,273 bytes, SHA-256
+`1cf8a56378cc8fa02b35f95051649afaa932879b8e5ee718271648c85dc09b4e`, built from `29963fa` plus the version (0 warnings).
+Against the 1.1.1 zip: the same entries. `tests/Run-All.ps1 -Earth -OldWorld` on that zip and its DLL: 10 of 10
+(WorldOptions 101, Contract 105, client checks 177, PolarChecks 183,719 against Earth `main` with the new latitude
+checks, SeamEdits 40 + 15, SeamChecks, NewWorldChecks, WallLavaChecks, the 1.0.1 world's wall lava, the Earth polar
+smoke with Earth 2.2.0-rc.8 and Hydrology 0.6.2, new and reload). SeamChecks' terrain digest against 1.1.1's zip run the
+same day: 168 columns, only 7198/91, 7198/94 and 7198/97 differ, which take different values in runs of one build, so
+generated worlds are 1.1.1's (D58). No in-game check: nothing a client draws changed.
+
 ## Release 1.1.1 (15 November 2026)
 
 1.1.0 with the **Seam mist** world option taken off the world-creation screen (CW-D48's 1.1.1 note; the author's look

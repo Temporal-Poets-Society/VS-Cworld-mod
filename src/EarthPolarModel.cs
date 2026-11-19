@@ -206,6 +206,16 @@ namespace CylinderWorld
         public Column Sample(double x, double z) => sample(x, z);
         public double Latitude(double z) => (equatorZ - z) / blocksPerDegreeZ;
 
+        /// <summary>
+        /// Whether Earth-mode ice can lie at this latitude at all: Arctic sea ice from <see cref="ArcticIceLatitude"/> north,
+        /// seasonal sea ice from <see cref="SeasonalSouthLatitude"/> and Antarctic glacier from <see cref="AntarcticLatitude"/>
+        /// south (the Wall's own blocks aside). Earth's column latitude is the very number <see cref="Latitude"/> gives (both
+        /// (EquatorZ - z) / BlocksPerDegreeZ; PolarChecks compares them), so a caller can rule a column out from z alone.
+        /// That matters off the generation threads (CW-0024): a <see cref="Sample"/> on the server's main thread cost about
+        /// 4.6 ms and 3 MB on Earth 1:10 with 30 players in 30 places, as each read a different GLO-90 tile.
+        /// </summary>
+        public static bool IceLatitude(double latitude) => latitude >= ArcticIceLatitude || latitude <= SeasonalSouthLatitude;
+
         /// <summary>Fixed gameplay approximation, not an observed sea-ice dataset or seasonal simulation.
         /// Cold Arctic ocean has continuous low ice, with an irregular floe margin toward warmer Atlantic water.</summary>
         public static double ArcticCoverage(Column c) => !c.Ocean ? 0 :

@@ -103,8 +103,8 @@ namespace CylinderWorld
                 long key = ColumnKey.Of(e.x, e.z);
                 if (!e.loaded) { loaded.Remove(key); continue; }
                 if (p?.EarthPolar == null || !p.SeasonalSeaIce) continue;
-                double lat = p.EarthPolar.Latitude(e.z * 32);
-                if (lat < 66 && p.EarthPolar.Latitude(e.z * 32 + 31) > -55) continue;
+                // Its northern and southern rows (north = small z): no sea ice anywhere between them
+                if (!EarthPolarModel.IceLatitude(p.EarthPolar.Latitude(e.z * 32)) && !EarthPolarModel.IceLatitude(p.EarthPolar.Latitude(e.z * 32 + 31))) continue;
                 if (!loaded.ContainsKey(key))
                 {
                     loaded[key] = new Work { X = e.x, Z = e.z };

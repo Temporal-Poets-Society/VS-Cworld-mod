@@ -1,5 +1,11 @@
 # Cylinder World — Vintage Story 1.22
 
+**19 November - 1.1.2:** Earth-world servers with many players no longer stall once a second. The polar cold check
+asked Earth's terrain about every player's position each second, wherever they were; on a 1:10 server with 30 players
+that held the server for about a seventh of a second each time. It now answers at once between 55° S and 66° N, where
+neither sea ice nor the Antarctic glacier can lie, and asks Earth only nearer the poles. The answer is the same
+everywhere, so worlds generate and play as in 1.1.1 (CW-0024).
+
 **15 November - 1.1.1:** the **Seam mist** world option is no longer on the world-creation screen's Earth tab. New
 worlds still get it off (its default), and an admin still switches it with `/worldconfig cylinderSeamMist true` (or
 `false`); a change applies at the next start of the world or server. Nothing else changed (CW-D48).

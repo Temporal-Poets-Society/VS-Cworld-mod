@@ -174,10 +174,47 @@ class Program
             Check(p.HasArcticIce(p.JumpInset - 0.5, z, a) == p.HasArcticIce(p.JumpInset - 0.5 + p.Circumference, z, b), "Arctic ice wraps across the seam");
         }
         Render(model, p, args[3]);
+        CheckIceLatitudeShortcut(p, geo, false);
         p.SeasonalSeaIce=true;
+        CheckIceLatitudeShortcut(p, geo, true);
         RenderSeasonal(model,p,args[3]);
         RenderArcticDetail(p,args[3]);
         Console.WriteLine($"PASS {checks} checks; previews in {args[3]}");
+    }
+
+    /// <summary>
+    /// CW-0024: IsIceCovered rules out 55°S-66°N from z alone, without sampling Earth. Earth's column latitude must be the
+    /// adapter's Latitude(z) (Earth clamps it to ±90 beyond the poles, inside the Wall), and the verdict must be the full
+    /// rule's everywhere: the whole globe, and densely across both boundary latitudes.
+    /// </summary>
+    static void CheckIceLatitudeShortcut(SeamParams p, EarthGeometry geo, bool seasonal)
+    {
+        string mode = seasonal ? " (seasonal sea ice)" : " (Arctic sea ice)";
+        var random = new Random(seasonal ? 2401 : 2400);
+        int covered = 0;
+        void At(double x, double z)
+        {
+            var s = p.EarthPolar.Sample(x, z);
+            double lat = p.EarthPolar.Latitude(z);
+            Check(Math.Abs(lat) > 90 ? s.Latitude == Math.Clamp(lat, -90, 90) : BitConverter.DoubleToInt64Bits(s.Latitude) == BitConverter.DoubleToInt64Bits(lat),
+                "Earth's column latitude is the adapter's Latitude(z)");
+            bool full = p.DistToZEdge(z) < p.WallFaceMax || s.Latitude <= -60 && s.Glacier || p.HasSeaIce(x, z, s);
+            bool fast = p.IsIceCovered(x, z);
+            Check(fast == full, "ice cover without the latitude shortcut is the same" + mode);
+            if (full) covered++;
+        }
+        for (int i = 0; i < 1500; i++) At(p.JumpInset + random.NextDouble() * p.Circumference, random.NextDouble() * p.WorldLength);
+        foreach (double edge in new[] { EarthPolarModel.ArcticIceLatitude, EarthPolarModel.SeasonalSouthLatitude, EarthPolarModel.AntarcticLatitude })
+        {
+            for (int i = 0; i < 600; i++)
+            {
+                geo.FromGeo(edge + (random.NextDouble() - 0.5) * 2, random.NextDouble() * 360 - 180, out double x, out double z);
+                At(x, z);
+            }
+            geo.FromGeo(edge, 0, out double ex, out double ez);
+            for (int dz = -3; dz <= 3; dz++) At(ex, Math.Floor(ez) + dz);
+        }
+        Check(covered > 0, "some ice cover sampled" + mode);
     }
 
     static SeamParams Parameters() => new SeamParams {
